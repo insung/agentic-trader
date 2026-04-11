@@ -1,6 +1,6 @@
-# MT5 & MCP Server Setup Guide for Linux (Wine)
+# MT5 & Backend Setup Guide for Linux (Wine)
 
-이 문서는 Linux Mint(및 Ubuntu 계열) 환경에서 물리적인 Windows PC 없이 **가상의 Windows 환경(Wine)**을 구축하고, 그 위에 **MetaTrader 5 (MT5)**와 **MT5 MCP 서버**를 띄워 AI 에이전트와 통신하는 전체 과정을 가이드합니다.
+이 문서는 Linux Mint(및 Ubuntu 계열) 환경에서 물리적인 Windows PC 없이 **가상의 Windows 환경(Wine)**을 구축하고, 그 위에 **MetaTrader 5 (MT5)**와 우리가 직접 개발할 **FastAPI 백엔드 서버**를 띄우는 전체 과정을 가이드합니다.
 
 ## 1. 사전 필수 사항: Wine HQ 설치
 
@@ -30,7 +30,7 @@ wget "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.ex
 # Wine으로 설치 진행 (UI가 뜹니다)
 wine mt5setup.exe
 ```
-> **[중요]** 설치 완료 후 MT5 데스크탑 창이 열리면, **[데모 계정 로그인]**을 수행하시고 `[도구] -> [옵션] -> [전문가 조언자(Expert Advisors)]` 탭에서 반드시 **"자동 매매 허용 (Allow algorithmic trading)"**을 체크해 주셔야 MCP 서버가 매매를 실행할 수 있습니다.
+> **[중요]** 설치 완료 후 MT5 데스크탑 창이 열리면, **[데모 계정 로그인]**을 수행하시고 `[도구] -> [옵션] -> [전문가 조언자(Expert Advisors)]` 탭에서 반드시 **"자동 매매 허용 (Allow algorithmic trading)"**을 체크해 주셔야 백엔드 서버가 매매를 실행할 수 있습니다.
 
 ## 3. Windows용 파이썬 환경 구축 (Wine 내부)
 
@@ -47,31 +47,17 @@ wine python-3.11.8-amd64.exe /quiet InstallAllUsers=1 PrependPath=1
 wine python --version
 ```
 
-## 4. MT5 MCP 서버 동기화 및 구동
+## 4. FastAPI 백엔드 서버 환경 세팅 및 구동
 
-최신 `uv` 패키지 관리자를 통해 Python 패키지 의존성을 관리하는 `Qoyyuum/mcp-metatrader5-server` 구동 환경을 만듭니다.
+우리가 직접 개발하는 FastAPI 서버는 MT5 터미널과 메모리를 공유하기 위해 **반드시 Wine 내부의 파이썬으로 실행**되어야 합니다.
 
 ```bash
-# 1. 프로젝트를 담을 폴더 생성 후 레포지토리 클론
-cd ~/Github/agentic-trader
-git clone https://github.com/Qoyyuum/mcp-metatrader5-server.git
-cd mcp-metatrader5-server
+# 1. 파이썬 패키지 설치 (Wine 환경 내부로 설치됨)
+wine python -m pip install -r requirements.txt
 
-# 2. 클론받은 폴더 내에서 `pip`를 통해 MCP 서버와 MT5 라이브러리 설치
-# (wine python 환경 안으로 패키지가 깔림)
-wine python -m pip install -e .
-wine python -m pip install MetaTrader5
+# 2. FastAPI 서버 구동 (MT5와 연결)
+# 서버가 켜지면서 MT5 단말기와 IPC 통신을 시작합니다.
+wine python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
-## 5. 실행 및 테스트 통신
-
-모든 준비가 완료되었다면 에이전트와 통신할 준비를 합니다.
-
-1. 바탕화면 또는 터미널을 통해 **Wine에서 MT5 단말기가 백그라운드에 켜져 있는 상태**를 만듭니다.
-2. 터미널을 새로 열고, 셋업한 mcp 서버를 아래 명령어로 기동합니다.
-   ```bash
-   # MT5 MCP 서버를 stdio (통신 모드) 로 실행 대기
-   wine python -m src.mcp_mt5.main
-   ```
-
-이 콘솔이 열린 상태로 두면, Linux 로컬에서 작동하는 AI 에이전트(Antigravity 등)가 이 프로세스를 타겟팅하여 계정 정보 조회 및 매매를 곧바로 시작할 수 있습니다.
+이 콘솔이 열린 상태로 두면, 포트 8000번을 통해 Linux 로컬 환경이나 외부에서 안전하게 MT5의 데이터를 조회하고 매매(LangGraph 워크플로우 등)를 시작할 수 있습니다.

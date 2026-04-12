@@ -1,0 +1,19 @@
+# Web Server (FastAPI)
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+pydantic>=2.0.0
+
+# AI & Orchestration (LangGraph + Google GenAI)
+langchain-core>=0.1.0
+langgraph>=0.0.10
+langchain-google-genai>=0.0.9
+
+# Data Processing & Indicators
+pandas>=2.0.0
+pandas-ta>=0.3.14b0
+
+# Trading API
+MetaTrader5>=5.0.45
+
+# Utilities
+python-dotenv>=1.0.0

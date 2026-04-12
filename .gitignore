@@ -1,0 +1,23 @@
+# Environments
+venv/
+.env
+.venv
+env/
+__pycache__/
+*.pyc
+
+# MT5 Logs & Temp
+*.log
+*.log.*
+*.tmp
+*.temp
+
+# IDE & OS
+.idea/
+.vscode/
+.DS_Store
+
+# Test & Coverage
+.coverage
+htmlcov/
+.pytest_cache/

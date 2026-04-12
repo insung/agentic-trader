@@ -3,7 +3,7 @@ import MetaTrader5 as mt5
 def test_connection():
     # MT5 터미널 연결 시도
     if not mt5.initialize():
-        print("❌ MT5 초기화 실패! initialize() failed.")
+        print(f"❌ MT5 초기화 실패! initialize() failed. Error: {mt5.last_error()}")
         print("➡️ 가능한 원인:")
         print("   1. MT5 데스크탑 클라이언트 켜져있지 않음")
         print("   2. 리눅스 네이티브 Python에서 이 스크립트를 실행했음 (Wine 파이썬 환경 필수)")

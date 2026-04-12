@@ -6,7 +6,7 @@
 
 ```text
 agentic-trader/
-├── .gemini/                 # AI 시스템 프롬프트 저장소
+├── .agents/                 # AI 시스템 프롬프트 저장소
 │   ├── agents/              # 각 노드(Tech Analyst, Chief Trader 등)의 프롬프트 템플릿
 │   └── rules/               # 글로벌 프롬프트 룰
 ├── backend/                 # 자체 개발 Trading API & Orchestrator (FastAPI)
@@ -26,28 +26,35 @@ agentic-trader/
 
 ---
 
-## 🚀 단계별 구현 계획 (Phased Implementation)
+## 🚀 단계별 구현 계획 (Action Plan & Checklist)
+현재 "아이디어 구체화 및 설계" 단계를 마치고, MVP 구현을 위한 실행 로드맵에 따라 개발을 진행합니다. 이 과정은 메인 AI 에이전트(Gemini CLI)의 지휘 하에 `coder` 에이전트가 코딩을 전담하는 방식으로 이루어집니다.
 
-### Phase 1: 코어 백엔드 및 MT5 연동 (Infrastructure & Safety)
-가장 먼저, AI 없이 파이썬만으로 MT5와 통신하고 안전장치를 통과하는 "뼈대"를 만듭니다.
-1. `requirements.txt` 작성 및 Wine 파이썬 가상환경에 `fastapi`, `MetaTrader5`, `pandas-ta` 설치.
-2. `backend/main.py` 생성 후 헬스 체크 엔드포인트 확인.
-3. `backend/services/`에 MT5로부터 OHLCV 데이터를 가져와 RSI 등 지표를 붙이는 순수 파이썬 함수 구현.
-4. `backend/core/`에 "손익비 검증", "1일 손실 한도 체크" 등 하드코딩된 가드레일(Interceptor) 인터페이스 껍데기 구현.
+### Phase 0: 기반 세팅 및 뼈대 구축 (완료)
+*   [x] 프로젝트 구조 및 아키텍처 설계 (`README.md`, `PHILOSOPHY.md`, `AGENTS.md` 등)
+*   [x] Linux Mint + Wine 환경에서 MetaTrader 5 설치 및 데모 계정 연동
+*   [x] FastAPI 백엔드 뼈대 코드(Boilerplate) 및 핵심 `TODO` 주석 구성
 
-### Phase 2: LangGraph 파이프라인 배관 공사 (Orchestration)
-LLM을 붙이기 전에 파이썬 상태 머신(State Machine)이 1번부터 5번 노드까지 잘 흘러가는지 테스트합니다.
-1. `backend/workflows/state.py`에 에이전트들이 주고받을 데이터 구조(예: `dict` 형태의 `AgentState`) 정의.
-2. `backend/workflows/nodes.py`에 더미(Dummy) 응답을 뱉는 가짜 에이전트 함수들 작성.
-3. `backend/workflows/graph.py`에서 노드들을 연결하고, 조건부 엣지(예: Chief Trader가 승인하면 매매 노드로, 아니면 종료) 라우팅 로직 구현.
-4. 디스패처(API 엔드포인트)를 통해 그래프 실행 테스트.
+### Phase 1: MT5 인프라 및 절대 방어망(Guardrails) 구축 (완료)
+*   **목표:** 시장 데이터 수집 및 안전한 주문 전송을 위한 뼈대 완성. (LLM 미개입)
+*   **작업 내용:**
+    *   [x] `backend/services/mt5_client.py` 구현 및 리눅스(Wine) 환경에서의 MT5 연결 테스트 (`tests/test_mt5_connection.py`).
+        *   **완료 세부사항:** 터미널 환경과 Wine(MT5) 간의 IPC 단절 문제를 환경 변수 주입(`WINEPREFIX`)으로 해결하여 통신 성공.
+    *   [x] `backend/core/guardrails.py`에 정의된 5가지 리스크 관리 규칙(1% 룰 랏수 계산, 일일 손실 한도 등)을 순수 파이썬 수학 로직으로 구현.
+        *   **완료 세부사항:** 어떠한 LLM 개입 없는 확정적 파이썬 수식으로 구현 완료 및 모든 단위 테스트 통과.
 
-### Phase 3: AI 두뇌 결합 및 프롬프트 엔지니어링 (AI Integration)
-더미 노드들을 실제 LLM 호출 로직으로 교체합니다.
-1. `.gemini/agents/` 디렉토리에 각 역할(Tech Analyst, Strategist, Chief Trader)에 맞는 시스템 프롬프트 마크다운 파일 작성.
-2. `langchain-google-genai` (또는 anthropic) 패키지를 사용하여 노드 함수 내에서 LLM API를 호출하고 응답을 JSON 구조로 파싱(Structured Output)하도록 구현.
-3. AI가 뱉어낸 JSON 응답이 Phase 1에서 만든 가드레일(안전장치)을 통과하는지 통합 테스트.
+### Phase 2: LangGraph 파이프라인 배관 공사
+*   **목표:** 에이전트 워크플로우를 통제할 파이썬 상태 머신(State Machine) 구축.
+*   **작업 내용:**
+    *   [ ] LLM을 붙이기 전, `backend/workflows/` 디렉토리에 더미(Dummy) 데이터를 흐르게 하여 `기술 분석가 -> 전략가 -> 트레이더` 노드 순서대로 상태(State)가 정확히 전달되는지 파이프라인 통신 테스트 진행.
 
-### Phase 4: 모의 트레이딩 (Paper Trading) 및 피드백 루프 완성
-1. MT5 데모 계좌와 연동하여 실시간 가격 변화에 따른 앤드투앤드(End-to-End) 매매 사이클 검증.
-2. 매매 종료 후 Risk Reviewer 노드가 '매매 일지'를 로컬 DB(또는 마크다운 파일)에 작성하고, 다음 매매 시 이를 RAG로 불러오는 자가 발전 사이클 완비.
+### Phase 3: AI 두뇌 결합 (Prompt Engineering & LLM 연동)
+*   **목표:** 각 노드(에이전트)에 실제 판단을 내릴 LLM의 뇌를 이식.
+*   **작업 내용:**
+    *   [ ] 메인 에이전트 주도하에 `.agents/agents/` 디렉토리 내 각 에이전트별 시스템 프롬프트(마크다운 템플릿) 작성 및 고도화.
+    *   [ ] LangGraph 노드 내부에서 LLM API를 호출하고, 그 응답을 강제화된 JSON 형식(Structured Output)으로 받아와 파이프라인 상에 매핑하는 로직 구현.
+
+### Phase 4: 모의 투자(Paper Trading) 및 Reviewer 에이전트(서기) 완성
+*   **목표:** 전체 사이클의 통합 및 RAG(검색 증강 생성) 기반 피드백 루프 완성.
+*   **작업 내용:**
+    *   [ ] 완성된 파이프라인을 데모 계좌에 연결하여 실제 시장 가격 데이터 기반으로 앤드투앤드(End-to-End) 매매 사이클 검증.
+    *   [ ] **Risk Reviewer** 노드가 포지션 청산 후 매매 결과를 복기하고 일지를 작성하여, 이를 벡터 DB 또는 마크다운 파일로 저장하여 다음 매매 시 `Chief Trader`가 참조할 수 있도록 자가 발전 루프 구현.

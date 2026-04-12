@@ -27,7 +27,7 @@
 *   **`docs/agent-workflow-design.md`:** 5단계 멀티 에이전트(Tech Analyst -> Strategist -> Sentiment Analyst -> Chief Trader -> Risk Reviewer) 협업 파이프라인 다이어그램.
 *   **`docs/safety-guardrails.md`:** 백엔드에 하드코딩해야 할 5가지 절대 방어 규칙 및 인터셉터 명세.
 *   **`AGENTS.md`:** 각 에이전트 노드(Node)의 역할(Role), 입력(Input), 출력(Output) 정의서.
-    *   *참고:* `.gemini/agents/` 디렉토리는 CLI 스크립트가 아닌, 파이썬 LangGraph가 LLM 호출 시 사용할 **시스템 프롬프트 템플릿(System Prompt Templates)** 저장소입니다.
+    *   *참고:* `.agents/agents/` 디렉토리는 CLI 스크립트가 아닌, 파이썬 LangGraph가 LLM 호출 시 사용할 **시스템 프롬프트 템플릿(System Prompt Templates)** 저장소입니다.
 
 ## 🛠️ 3. 행동 지침 (Action Guidelines)
 

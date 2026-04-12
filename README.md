@@ -8,14 +8,18 @@ AI(LLM)를 두뇌로 활용하여 해외선물 및 주식을 자율적으로 거
 *   **Multi-Agent Reflexion Loop:** 단일 프롬프트가 아닌, 기술 분석가 -> 전략가 -> 트레이더 -> 복기 서기 로 이어지는 다중 페르소나 협업 구조를 통해 사람과 같은 입체적인 매매를 지향합니다.
 *   **Low-Cost & Stateless:** 대화 컨텍스트가 무한히 쌓이는 CLI 에이전트 방식 대신, 각 단계(Node)마다 필요한 정보만 JSON으로 캡슐화하여 LLM API를 1회성(Stateless)으로 호출하므로 토큰 비용이 극도로 저렴합니다.
 
+## 💻 로컬 환경 세팅 가이드 (Linux/Wine)
+MetaTrader 5는 공식적으로 Windows만 지원하므로, Linux 환경에서는 Wine을 사용해야 합니다. 
+
+1. **[MQL5 공식 가이드](https://www.mql5.com/en/articles/625?utm_source=www.metatrader5.com&utm_campaign=download.mt5.linux)** : MetaTrader 5 on Linux 을 참고하여 메타트레이더5를 설치합니다.
+2. **계정 로그인 및 자동 매매 허용:** MT5 설치 후 데모 계정으로 로그인하고, `[도구] -> [옵션] -> [전문가 조언자(Expert Advisors)]` 탭에서 **"자동 매매 허용 (Allow algorithmic trading)"**을 반드시 체크해야 합니다.
+
 ## 📌 프로젝트 구조 원칙
 1.  **로직의 분리:** 복잡한 연산과 통제는 파이썬(FastAPI, LangGraph)이, 시장 상황에 대한 정성적 추론과 전략 매핑은 LLM(Prompt)이 담당합니다.
-2.  **`.gemini/` 의 역할 변화:** 더 이상 CLI 에이전트의 실행 스크립트가 아닌, 파이썬 오케스트레이터가 LLM API를 호출할 때 주입할 **'시스템 프롬프트 템플릿(System Prompt Templates)'** 저장소로 활용됩니다.
+2.  **`.agents/` 의 역할 변화:** 더 이상 CLI 에이전트의 실행 스크립트가 아닌, 파이썬 오케스트레이터가 LLM API를 호출할 때 주입할 **'시스템 프롬프트 템플릿(System Prompt Templates)'** 저장소로 활용됩니다.
 
-## 향후 계획 (Implementation Plan)
-현재 "아이디어 구체화 및 설계" 단계를 마치고, 실제 코드를 작성하는 구현 단계로 진입합니다.
+## 🗺️ 향후 실행 로드맵 (Action Plan)
+프로젝트의 상세한 단계별 실행 로드맵 및 MVP 구현 체크리스트는 별도의 문서로 분리하여 관리합니다.
+현재 `Phase 1`이 성공적으로 완료되었으며, 남은 구현 계획은 아래 문서를 참고하십시오.
 
-1.  **파이썬 가상환경 및 패키지 세팅:** `fastapi`, `langgraph`, `pandas-ta`, `MetaTrader5` 등 핵심 라이브러리 설치 환경(`requirements.txt`) 구성.
-2.  **FastAPI 백엔드 뼈대(Boilerplate) 구축:** `backend/` 디렉토리에 서버 엔드포인트를 띄우고, 5대 절대 방어 규칙(Guardrails) 중 일부를 빈 함수(Dummy) 형태로 우선 구현.
-3.  **LangGraph 'Hello World' 워크플로우 작성:** 복잡한 프롬프트 없이 `분석가 -> 전략가 -> 트레이더` 노드로 이어지는 파이썬 상태 머신(State Machine) 배관 통신 테스트 진행.
-4.  **MT5 API 연동 및 시스템 통합:** 실제 데모 계좌와 연결하여 파이프라인 전체 사이클 테스트 및 프롬프트 고도화.
+👉 **[docs/mvp-implementation-plan.md](docs/mvp-implementation-plan.md) 참조**

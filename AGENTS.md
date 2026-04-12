@@ -20,7 +20,7 @@
     *   `backend/api/`: 외부(Webhook)나 내부 스케줄러(Cron)로부터 시장 이벤트를 감지하여 LangGraph 파이프라인을 격발(Trigger)시키는 디스패처.
     *   `backend/core/`: 1일 손실 락(Lock), 매매 횟수 제한, 랏수(Lot) 자동 계산 등 AI의 환각을 물리적으로 막아내는 절대 안전 장치(Guardrails).
     *   `workflows/ (LangGraph)`: 파이썬 코드로 각 에이전트 노드(Node)의 실행 순서를 100% 강제(Hard-coded Routing).
-3.  **The AI Brains (`.gemini/agents/*.md`):**
+3.  **The AI Brains (`.agents/agents/*.md`):**
     *   이 폴더의 마크다운 파일들은 CLI 에이전트용 실행 파일이 아닙니다! 파이썬 LangGraph 오케스트레이터가 LLM API(Gemini/Claude)를 호출할 때 주입하는 **'각 에이전트별 시스템 프롬프트(System Prompt Templates)'**입니다.
 
 ---

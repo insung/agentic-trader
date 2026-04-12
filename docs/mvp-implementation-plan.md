@@ -42,10 +42,11 @@ agentic-trader/
     *   [x] `backend/core/guardrails.py`에 정의된 5가지 리스크 관리 규칙(1% 룰 랏수 계산, 일일 손실 한도 등)을 순수 파이썬 수학 로직으로 구현.
         *   **완료 세부사항:** 어떠한 LLM 개입 없는 확정적 파이썬 수식으로 구현 완료 및 모든 단위 테스트 통과.
 
-### Phase 2: LangGraph 파이프라인 배관 공사
+### Phase 2: LangGraph 파이프라인 배관 공사 (완료)
 *   **목표:** 에이전트 워크플로우를 통제할 파이썬 상태 머신(State Machine) 구축.
 *   **작업 내용:**
-    *   [ ] LLM을 붙이기 전, `backend/workflows/` 디렉토리에 더미(Dummy) 데이터를 흐르게 하여 `기술 분석가 -> 전략가 -> 트레이더` 노드 순서대로 상태(State)가 정확히 전달되는지 파이프라인 통신 테스트 진행.
+    *   [x] LLM을 붙이기 전, `backend/workflows/` 디렉토리에 더미(Dummy) 데이터를 흐르게 하여 `기술 분석가 -> 전략가 -> 트레이더` 노드 순서대로 상태(State)가 정확히 전달되는지 파이프라인 통신 테스트 진행.
+        *   **완료 세부사항:** `AgentState` 정의 및 더미 노드들을 `StateGraph`로 연결하여 1번부터 5번 노드까지 데이터가 정상적으로 전달되는 배관 테스트 통과 (`tests/test_dummy_graph.py`).
 
 ### Phase 3: AI 두뇌 결합 (Prompt Engineering & LLM 연동)
 *   **목표:** 각 노드(에이전트)에 실제 판단을 내릴 LLM의 뇌를 이식.

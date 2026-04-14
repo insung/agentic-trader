@@ -1,5 +1,41 @@
-from typing import Dict, Any
+import os
+from typing import Dict, Any, List
+from pydantic import BaseModel, Field
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import SystemMessage, HumanMessage
 from backend.workflows.state import AgentState
+
+# Pydantic Models for Structured Output
+class TechSummary(BaseModel):
+    trend: str = Field(description="bullish | bearish | neutral")
+    key_observations: List[str] = Field(description="List of key observations")
+    support_levels: List[float] = Field(description="Support levels")
+    resistance_levels: List[float] = Field(description="Resistance levels")
+    summary: str = Field(description="Comprehensive technical analysis briefing (max 3 sentences)")
+
+class StrategyHypothesis(BaseModel):
+    selected_strategy: str = Field(description="Selected strategy name")
+    market_condition: str = Field(description="Current market condition assessment")
+    action: str = Field(description="BUY | SELL | WAIT")
+    confidence: float = Field(description="Confidence level between 0 and 1")
+    reasoning: str = Field(description="Detailed explanation of the hypothesis")
+
+class FinalOrder(BaseModel):
+    action: str = Field(description="BUY | SELL | HOLD")
+    sl: float = Field(description="Stop Loss price")
+    tp: float = Field(description="Take Profit price")
+    final_reasoning: str = Field(description="Logical reasoning for final approval or rejection")
+
+def _read_prompt(agent_name: str) -> str:
+    """Read the system prompt from the markdown file."""
+    # Compute base dir as the project root
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    file_path = os.path.join(base_dir, ".agents", "agents", f"{agent_name}.md")
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return f"System prompt for {agent_name} not found."
 
 def fetch_data_node(state: AgentState) -> Dict[str, Any]:
     """
@@ -12,47 +48,53 @@ def fetch_data_node(state: AgentState) -> Dict[str, Any]:
 def tech_analyst_node(state: AgentState) -> Dict[str, Any]:
     """
     Node 2: Tech Analyst analyzes raw data and outputs a summary.
-    Dummy implementation parsing state and returning fixed summary.
     """
     print("[Node 2] tech_analyst_node executed")
-    raw_data = state.get("raw_data", "")
-    return {
-        "tech_summary": {
-            "trend": "bullish",
-            "support": 50000,
-            "resistance": 55000,
-            "source_data_length": len(raw_data)
-        }
-    }
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
+    structured_llm = llm.with_structured_output(TechSummary)
+    
+    system_prompt = _read_prompt("tech_analyst")
+    human_content = f"Here is the raw data:\n{state.get('raw_data', '')}"
+    
+    response = structured_llm.invoke([
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=human_content)
+    ])
+    
+    return {"tech_summary": response.model_dump()}
 
 def strategist_node(state: AgentState) -> Dict[str, Any]:
     """
     Node 3: Strategist reviews technical summary and returns a hypothesis.
-    Dummy implementation.
     """
     print("[Node 3] strategist_node executed")
-    tech_summary = state.get("tech_summary", {})
-    return {
-        "strategy_hypothesis": {
-            "action": "buy",
-            "confidence": 0.8,
-            "based_on_trend": tech_summary.get("trend", "unknown")
-        }
-    }
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
+    structured_llm = llm.with_structured_output(StrategyHypothesis)
+    
+    system_prompt = _read_prompt("strategist")
+    human_content = f"Here is the Tech Summary:\n{state.get('tech_summary', {})}"
+    
+    response = structured_llm.invoke([
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=human_content)
+    ])
+    
+    return {"strategy_hypothesis": response.model_dump()}
 
 def chief_trader_node(state: AgentState) -> Dict[str, Any]:
     """
     Node 4: Chief Trader reviews hypothesis and returns final order.
-    Dummy implementation.
     """
     print("[Node 4] chief_trader_node executed")
-    hypothesis = state.get("strategy_hypothesis", {})
-    return {
-        "final_order": {
-            "action": "BUY",
-            "sl": 49000,
-            "tp": 56000,
-            "symbol": "BTCUSD",
-            "reasoning_action": hypothesis.get("action", "none")
-        }
-    }
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
+    structured_llm = llm.with_structured_output(FinalOrder)
+    
+    system_prompt = _read_prompt("chief_trader")
+    human_content = f"Here is the Strategy Hypothesis:\n{state.get('strategy_hypothesis', {})}"
+    
+    response = structured_llm.invoke([
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=human_content)
+    ])
+    
+    return {"final_order": response.model_dump()}

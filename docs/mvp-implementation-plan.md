@@ -48,11 +48,12 @@ agentic-trader/
     *   [x] LLM을 붙이기 전, `backend/workflows/` 디렉토리에 더미(Dummy) 데이터를 흐르게 하여 `기술 분석가 -> 전략가 -> 트레이더` 노드 순서대로 상태(State)가 정확히 전달되는지 파이프라인 통신 테스트 진행.
         *   **완료 세부사항:** `AgentState` 정의 및 더미 노드들을 `StateGraph`로 연결하여 1번부터 5번 노드까지 데이터가 정상적으로 전달되는 배관 테스트 통과 (`tests/test_dummy_graph.py`).
 
-### Phase 3: AI 두뇌 결합 (Prompt Engineering & LLM 연동)
+### Phase 3: AI 두뇌 결합 (Prompt Engineering & LLM 연동) (완료)
 *   **목표:** 각 노드(에이전트)에 실제 판단을 내릴 LLM의 뇌를 이식.
 *   **작업 내용:**
-    *   [ ] 메인 에이전트 주도하에 `.agents/agents/` 디렉토리 내 각 에이전트별 시스템 프롬프트(마크다운 템플릿) 작성 및 고도화.
-    *   [ ] LangGraph 노드 내부에서 LLM API를 호출하고, 그 응답을 강제화된 JSON 형식(Structured Output)으로 받아와 파이프라인 상에 매핑하는 로직 구현.
+    *   [x] 메인 에이전트 주도하에 `.agents/agents/` 디렉토리 내 각 에이전트별 시스템 프롬프트(마크다운 템플릿) 작성 및 고도화.
+    *   [x] LangGraph 노드 내부에서 LLM API를 호출하고, 그 응답을 강제화된 JSON 형식(Structured Output)으로 받아와 파이프라인 상에 매핑하는 로직 구현.
+        *   **완료 세부사항:** `langchain-google-genai` 연동 및 Pydantic을 활용하여 에이전트 프롬프트를 바탕으로 한 Structured Output 생성 성공 (`tests/test_nodes_llm.py` 통과).
 
 ### Phase 4: 모의 투자(Paper Trading) 및 Reviewer 에이전트(서기) 완성
 *   **목표:** 전체 사이클의 통합 및 RAG(검색 증강 생성) 기반 피드백 루프 완성.

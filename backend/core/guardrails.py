@@ -69,7 +69,8 @@ def enforce_one_percent_rule(account_balance: float, entry_price: float, sl_pric
     risk_amount = account_balance * 0.01
     lot_size = risk_amount / price_diff
     
-    return lot_size
+    # MT5 랏 단위에 맞춰 소수점 둘째 자리까지 반올림 (예: 0.01)
+    return round(lot_size, 2)
 
 def validate_sl_tp_modification_limit(ticket_id: int, modify_count: int) -> bool:
     """

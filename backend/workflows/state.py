@@ -16,3 +16,9 @@ class AgentState(TypedDict, total=False):
     
     # Node 4: Chief Trader
     final_order: Dict[str, Any]
+    
+    # Execution (MT5 Client)
+    order_result: Dict[str, Any]
+    
+    # Node 5: Risk Reviewer
+    review_log: Dict[str, Any]

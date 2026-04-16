@@ -55,8 +55,10 @@ agentic-trader/
     *   [x] LangGraph 노드 내부에서 LLM API를 호출하고, 그 응답을 강제화된 JSON 형식(Structured Output)으로 받아와 파이프라인 상에 매핑하는 로직 구현.
         *   **완료 세부사항:** `langchain-google-genai` 연동 및 Pydantic을 활용하여 에이전트 프롬프트를 바탕으로 한 Structured Output 생성 성공 (`tests/test_nodes_llm.py` 통과).
 
-### Phase 4: 모의 투자(Paper Trading) 및 Reviewer 에이전트(서기) 완성
+### Phase 4: 모의 투자(Paper Trading) 및 Reviewer 에이전트(서기) 완성 (완료)
 *   **목표:** 전체 사이클의 통합 및 RAG(검색 증강 생성) 기반 피드백 루프 완성.
 *   **작업 내용:**
-    *   [ ] 완성된 파이프라인을 데모 계좌에 연결하여 실제 시장 가격 데이터 기반으로 앤드투앤드(End-to-End) 매매 사이클 검증.
-    *   [ ] **Risk Reviewer** 노드가 포지션 청산 후 매매 결과를 복기하고 일지를 작성하여, 이를 벡터 DB 또는 마크다운 파일로 저장하여 다음 매매 시 `Chief Trader`가 참조할 수 있도록 자가 발전 루프 구현.
+    *   [x] 완성된 파이프라인을 데모 계좌에 연결하여 실제 시장 가격 데이터 기반으로 앤드투앤드(End-to-End) 매매 사이클 검증.
+        *   **완료 세부사항:** `execute_order_node` 추가 및 `main.py`에 `/api/v1/trade/trigger` 비동기 워크플로우 실행 엔드포인트 연동. End-to-End 테스트(`tests/test_end_to_end.py`) 통과.
+    *   [x] **Risk Reviewer** 노드가 포지션 청산 후 매매 결과를 복기하고 일지를 작성하여, 이를 벡터 DB 또는 마크다운 파일로 저장하여 다음 매매 시 `Chief Trader`가 참조할 수 있도록 자가 발전 루프 구현.
+        *   **완료 세부사항:** `risk_reviewer_node` 구현, `.agents/agents/risk_reviewer.md` 프롬프트 작성 및 상태(`order_result`, `review_log`) 추가 완료.

@@ -4,14 +4,16 @@ from backend.workflows.nodes import (
     fetch_data_node,
     tech_analyst_node,
     strategist_node,
-    chief_trader_node
+    chief_trader_node,
+    execute_order_node,
+    risk_reviewer_node
 )
 
 def create_workflow() -> StateGraph:
     """
     Creates and compiles the LangGraph StateGraph pipeline.
     Connects nodes in sequence:
-    fetch_data -> tech_analyst -> strategist -> chief_trader
+    fetch_data -> tech_analyst -> strategist -> chief_trader -> execute_order -> risk_reviewer
     """
     workflow = StateGraph(AgentState)
     
@@ -20,13 +22,17 @@ def create_workflow() -> StateGraph:
     workflow.add_node("tech_analyst", tech_analyst_node)
     workflow.add_node("strategist", strategist_node)
     workflow.add_node("chief_trader", chief_trader_node)
+    workflow.add_node("execute_order", execute_order_node)
+    workflow.add_node("risk_reviewer", risk_reviewer_node)
     
     # Define edges (sequence of execution)
     workflow.add_edge(START, "fetch_data")
     workflow.add_edge("fetch_data", "tech_analyst")
     workflow.add_edge("tech_analyst", "strategist")
     workflow.add_edge("strategist", "chief_trader")
-    workflow.add_edge("chief_trader", END)
+    workflow.add_edge("chief_trader", "execute_order")
+    workflow.add_edge("execute_order", "risk_reviewer")
+    workflow.add_edge("risk_reviewer", END)
     
     return workflow
 
@@ -36,3 +42,4 @@ def get_compiled_graph():
     """
     workflow = create_workflow()
     return workflow.compile()
+

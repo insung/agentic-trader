@@ -45,6 +45,14 @@ async def health_check():
         system=platform.system()
     )
 
+from backend.core.guardrails import (
+    validate_risk_reward_ratio, 
+    enforce_one_percent_rule,
+    validate_daily_drawdown_lock,
+    validate_max_trades_per_day
+)
+from backend.services.mt5_client import execute_mock_order, send_market_order
+
 def run_trading_workflow(symbol: str):
     """
     백그라운드에서 실행될 트레이딩 워크플로우 함수
@@ -52,13 +60,50 @@ def run_trading_workflow(symbol: str):
     try:
         print(f"🚀 Starting trading workflow for {symbol}")
         graph = get_compiled_graph()
-        initial_state = {"symbol": symbol}
+        initial_state = {"symbol": symbol, "timeframe": "M15"}
+        
+        final_state = initial_state.copy()
         
         # Stream the graph execution
         for s in graph.stream(initial_state):
             print(f"--- Node Executed: {list(s.keys())[0]} ---")
-        
+            final_state.update(list(s.values())[0])
+            
         print(f"✅ Trading workflow for {symbol} completed successfully.")
+        
+        # --- EXECUTION INTERCEPTOR ---
+        if final_state.get("error_flag"):
+            print("❌ Workflow failed due to LLM errors. Aborting execution.")
+            return
+
+        final_order = final_state.get("final_order")
+        if not final_order:
+            print("⚠️ No final order found in state.")
+            return
+            
+        action = final_order.get("action", "HOLD")
+        if action.upper() == "HOLD" or action.upper() == "WAIT":
+            print(f"🛑 Chief Trader decided to {action}. No order sent.")
+            return
+            
+        sl = final_order.get("sl", 0.0)
+        tp = final_order.get("tp", 0.0)
+        
+        account_balance = final_state.get("account_info", {}).get("balance", 10000.0)
+        entry_price = 1.055 # Mock entry price, should fetch from data
+        current_loss_pct = 0.0
+        today_trade_count = 0
+        
+        if not validate_daily_drawdown_lock(current_loss_pct): return
+        if not validate_max_trades_per_day(today_trade_count): return
+        if not validate_risk_reward_ratio(entry_price, sl, tp): return
+            
+        safe_lot_size = enforce_one_percent_rule(account_balance, entry_price, sl)
+        if safe_lot_size <= 0: return
+            
+        print(f"🔥 Executing order: {action} {symbol} | Lot: {safe_lot_size} | SL: {sl} | TP: {tp}")
+        execute_mock_order(symbol, action, safe_lot_size, sl, tp, entry_price)
+        
     except Exception as e:
         print(f"❌ Error in trading workflow for {symbol}: {e}")
 

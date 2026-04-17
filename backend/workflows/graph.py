@@ -9,6 +9,13 @@ from backend.workflows.nodes import (
     risk_reviewer_node
 )
 
+def tech_analyst_router(state: AgentState) -> str:
+    tech_summary = state.get("tech_summary", {})
+    if not tech_summary.get("trade_worthy", True):
+        print("Market is choppy. Short-circuiting workflow.")
+        return END
+    return "strategist"
+
 def create_workflow() -> StateGraph:
     """
     Creates and compiles the LangGraph StateGraph pipeline.
@@ -28,7 +35,13 @@ def create_workflow() -> StateGraph:
     # Define edges (sequence of execution)
     workflow.add_edge(START, "fetch_data")
     workflow.add_edge("fetch_data", "tech_analyst")
-    workflow.add_edge("tech_analyst", "strategist")
+    
+    workflow.add_conditional_edges(
+        "tech_analyst",
+        tech_analyst_router,
+        {"strategist": "strategist", END: END}
+    )
+    
     workflow.add_edge("strategist", "chief_trader")
     workflow.add_edge("chief_trader", "execute_order")
     workflow.add_edge("execute_order", "risk_reviewer")

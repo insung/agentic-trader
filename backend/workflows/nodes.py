@@ -12,6 +12,7 @@ from backend.core.guardrails import enforce_one_percent_rule
 # Pydantic Models for Structured Output
 class TechSummary(BaseModel):
     trend: str = Field(description="bullish | bearish | neutral")
+    trade_worthy: bool = Field(description="True if the market has clear direction and is worth trading, False if choppy/flat.")
     key_observations: List[str] = Field(description="List of key observations")
     support_levels: List[float] = Field(description="Support levels")
     resistance_levels: List[float] = Field(description="Resistance levels")

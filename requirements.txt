@@ -17,3 +17,4 @@ MetaTrader5>=5.0.45
 
 # Utilities
 python-dotenv>=1.0.0
+tenacity==8.2.3

@@ -4,9 +4,10 @@ AI(LLM)를 두뇌로 활용하여 해외선물 및 주식을 자율적으로 거
 
 ## 핵심 특징 (Key Features)
 *   **LangGraph 기반 오케스트레이션:** 제어 흐름(Control Flow)을 LLM의 자율성에 맡기지 않고, 파이썬 기반의 상태 머신(LangGraph)으로 강제하여 환각을 방지하고 파이프라인의 안정성을 100% 보장합니다.
-*   **Backend-First Architecture (FastAPI):** 외부 금융 API(MT5) 연동, 보조지표 연산(pandas-ta), 하드코딩된 절대 안전 규칙(Guardrails)은 모두 파이썬 백엔드가 담당하며, AI는 정제된 데이터를 받아 '판단'만 내립니다.
+*   **Fault-Tolerant & Efficient:** LLM API 실패 시 자동 재시도(Tenacity) 및 횡보장 조기 종료(Short-circuit) 라우팅을 통해 안정성과 비용 효율성을 동시에 잡았습니다.
+*   **Backend-First Architecture (FastAPI):** 외부 금융 API(MT5) 연동, 보조지표 연산(pandas-ta), 계좌 정보 주입 및 하드코딩된 절대 안전 규칙(Guardrails)은 모두 파이썬 백엔드가 담당하며, AI는 정제된 데이터를 받아 '판단'만 내립니다.
 *   **Multi-Agent Reflexion Loop:** 단일 프롬프트가 아닌, 기술 분석가 -> 전략가 -> 트레이더 -> 복기 서기 로 이어지는 다중 페르소나 협업 구조를 통해 사람과 같은 입체적인 매매를 지향합니다.
-*   **Low-Cost & Stateless:** 대화 컨텍스트가 무한히 쌓이는 CLI 에이전트 방식 대신, 각 단계(Node)마다 필요한 정보만 JSON으로 캡슐화하여 LLM API를 1회성(Stateless)으로 호출하므로 토큰 비용이 극도로 저렴합니다.
+*   **Knowledge-Based Reasoning:** `docs/trading-strategies/`에 저장된 전문 전략 지식 베이스를 동적으로 주입하여 전략적 일관성을 유지합니다.
 
 ## 💻 로컬 환경 세팅 가이드 (Linux/Wine)
 MetaTrader 5는 공식적으로 Windows만 지원하므로, Linux 환경에서는 Wine을 사용해야 합니다. 

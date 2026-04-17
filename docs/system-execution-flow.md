@@ -24,10 +24,11 @@ sequenceDiagram
     Graph->>Graph: Calculate Indicators (RSI, MACD)
     
     %% Node 2, 3, 4
-    Graph->>Agent: 2. Tech Analyst (Prompt + Data)
+    Graph->>Agent: 2. Tech Analyst (Prompt + Data + Retry)
+    Note over Graph, Agent: Conditional Edge: END if trade_worthy=False
     Agent-->>Graph: Tech Summary (JSON)
     
-    Graph->>Agent: 3. Strategist (Summary + Strategy MD)
+    Graph->>Agent: 3. Strategist (Summary + Strategies KB)
     Agent-->>Graph: Trading Hypothesis (JSON)
     
     %% Node 5
@@ -38,8 +39,9 @@ sequenceDiagram
     deactivate Graph
 
     %% Validation & Execution
-    FastAPI->>Core: 5. Validate Order (Guardrails Interceptor)
+    FastAPI->>Core: 5. Validate Order (Execution Interceptor)
     activate Core
+    Core->>Core: Check Portfolio Exposure
     Core->>Core: Check Daily Loss Limit
     Core->>Core: Check Max Trades
     Core->>Core: Validate Risk/Reward Ratio (> 2.0)
@@ -62,6 +64,6 @@ sequenceDiagram
 
 ## 플로우 핵심 요약
 1. **Dispatcher:** 스케줄러나 웹훅이 FastAPI의 엔드포인트를 때리면 전체 루프가 시작됩니다.
-2. **Deterministic Graph:** LangGraph는 LLM이 자유롭게 행동하게 두지 않고, 정해진 순서대로(데이터 수집 -> 분석 -> 전략 -> 결정)만 API를 호출합니다.
-3. **Hard-coded Interceptor:** AI(Chief Trader)가 매매 결정을 내리더라도, 최종적으로 FastAPI 단의 `Guardrails` 모듈을 통과하지 못하면 MT5 클라이언트로 주문이 넘어가지 않고 거부됩니다.
+2. **Fault-Tolerant Graph:** 각 LLM 노드는 API 실패 시 자동 재시도하며, 필터 라우팅을 통해 횡보장에서 조기 종료합니다.
+3. **Execution Interceptor:** LangGraph 출력을 `backend/core/guardrails`에서 최종 검증한 뒤 `mt5_client`로 전달하는 실행 접착제 로직이 포함되어 있습니다.
 4. **Lot Size Override:** AI가 아무리 큰 비중을 베팅하려 해도, 가드레일 모듈이 잔고의 1%만 잃도록 랏(Lot) 수를 강제 재계산(Override)하여 MT5로 전송합니다.

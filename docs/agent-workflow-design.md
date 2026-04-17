@@ -17,20 +17,21 @@ flowchart TD
 
     %% LangGraph 파이프라인
     subgraph LangGraph [2. LangGraph State Machine]
-        D -->|Start Graph| N_Data[Node 1: Fetch Data\n(Python Pandas)]
+        D -->|Start Graph| N_Data[Node 1: Fetch Data\n(Python + Portfolio Info)]
         
-        N_Data -->|Raw JSON| N_Tech(Node 2: Tech Analyst\nLLM Call)
+        N_Data -->|Raw JSON + Account| N_Tech(Node 2: Tech Analyst\nLLM Call + Retry)
         
-        N_Tech -->|Tech Summary| N_Strat(Node 3: Strategist\nLLM Call)
+        N_Tech -->|trade_worthy=False| End((End))
+        N_Tech -->|trade_worthy=True| N_Strat(Node 3: Strategist\nLLM Call + KB Injection)
         
         N_Strat -->|Hypothesis| N_Sent(Node 4: Sentiment Analyst\nLLM Call - Optional)
         
         DB[(Knowledge Base\nVector DB / JSON)] -.->|Retrieve Past Logs| N_Trader
         N_Strat --> N_Trader
-        N_Sent --> N_Trader(Node 5: Chief Trader\nLLM Call)
+        N_Sent --> N_Trader(Node 5: Chief Trader\nLLM Call + Portfolio Awareness)
         
-        N_Trader -->|Trade Signal| Guard{Python Guardrails\nRisk Check}
-        Guard -->|Reject| End((End))
+        N_Trader -->|Trade Signal| Guard{Python Guardrails\nExecution Interceptor}
+        Guard -->|Reject| End
         
         Guard -->|Pass| Exec[Execute Order\n(MT5 API)]
         
@@ -57,23 +58,23 @@ flowchart TD
 각 노드는 파이썬 함수이며, 내부에 프롬프트를 조립하여 LLM API(Gemini/Claude)를 호출하는 로직이 들어있습니다.
 
 ### Node 1: Fetch Data (Pure Python)
-*   **동작:** MT5 API에서 캔들 데이터를 가져와 `pandas-ta`로 RSI, MACD 등을 계산하여 JSON 형태로 State 딕셔너리에 저장합니다. LLM을 쓰지 않습니다.
+*   **동작:** MT5 API에서 캔들 데이터뿐만 아니라 **현재 계좌 잔고(Balance) 및 미결제 약정(Open Positions)** 정보를 함께 가져옵니다. 이를 통해 이후 노드들이 자금 관리 맥락을 파악할 수 있게 합니다.
 
 ### Node 2: Tech Analyst (LLM)
-*   **동작:** Node 1에서 만든 데이터 JSON과 미리 정의된 `[기술 분석가 프롬프트]`를 LLM API로 보냅니다. 반환받은 "현재 기술적 추세 요약 텍스트"를 State에 저장합니다.
+*   **동작:** 데이터를 분석하여 추세를 요약하며, 특히 **`trade_worthy` (매매 적합성)** 여부를 판단합니다. 시장이 횡보장일 경우 조건부 라우팅을 통해 파이프라인을 조기 종료(Short-circuit)합니다.
 
 ### Node 3: Strategist (LLM)
-*   **동작:** Node 2의 요약 텍스트와 `docs/trading-strategy.md`의 기초 전략 리스트를 LLM API에 넣어, "어떤 전략을 쓸 것인지" 매매 가설을 세웁니다.
+*   **동작:** `docs/trading-strategies/`에 저장된 공식 전략 지표 파일들을 컨텍스트로 주입받아, 시스템의 원칙에 맞는 매매 가설을 세웁니다.
 
 ### Node 4: Sentiment Analyst (LLM - Optional)
 *   **동작:** 뉴스 API 등의 텍스트를 읽고 거시적 분위기를 요약합니다.
 
 ### Node 5: Chief Trader (LLM + RAG)
-*   **동작:** 앞선 노드들의 모든 요약 텍스트와, 벡터 DB에서 검색해 온 과거의 '매매 일지(유사 상황)'를 묶어 최종 프롬프트를 만듭니다. LLM API는 `{"action": "BUY", "sl": 60000}` 형태의 확정적인 JSON만 반환하도록 강제(Structured Output)됩니다.
+*   **동작:** 모든 분석 결과와 **현재 계좌 상태(Exposure)**를 종합하여 최종 결정을 내립니다. 
 
 ### Node 6: Risk Reviewer (LLM)
 *   **동작:** 매매가 청산된 후, 당시 Node 5가 내렸던 판단과 실제 결과를 LLM에게 주어 '반성문(Trading Journal)'을 작성하게 하고 이를 DB에 저장합니다.
 
 ## 3. LangGraph의 압도적 장점
-*   **Zero Hallucination Routing:** 에이전트가 "다음엔 뭘 할까?" 고민하지 않으므로 실행 순서가 100% 보장됩니다.
-*   **비용 극소화:** 채팅 히스토리를 통째로 넘기지 않고, 파이썬이 딱 필요한 요약 텍스트만 프롬프트에 주입하여 1회성 API 호출로 끝내므로 토큰이 획기적으로 절약됩니다.
+*   **Fault-Tolerant Retry:** LLM API 호출 실패 시 지수 백오프(Exponential Backoff) 기반의 재시도 로직이 적용되어 있습니다.
+*   **Zero Hallucination Routing:** 조건부 엣지(Conditional Edges)를 사용하여 불필요한 노드 실행을 차단하고 비용을 절감합니다.

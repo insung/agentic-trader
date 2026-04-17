@@ -48,6 +48,19 @@ def _read_prompt(agent_name: str) -> str:
     except FileNotFoundError:
         return f"System prompt for {agent_name} not found."
 
+def _read_strategies() -> str:
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    strategies_dir = os.path.join(base_dir, "docs", "trading-strategies")
+    strategies_text = ""
+    if os.path.exists(strategies_dir):
+        for filename in os.listdir(strategies_dir):
+            if filename.endswith(".md"):
+                filepath = os.path.join(strategies_dir, filename)
+                with open(filepath, "r", encoding="utf-8") as f:
+                    strategies_text += f"\n--- {filename} ---\n"
+                    strategies_text += f.read()
+    return strategies_text
+
 def fetch_data_node(state: AgentState) -> Dict[str, Any]:
     """
     Node 1: Fetch OHLCV Data and calculate indicators.
@@ -97,7 +110,10 @@ def strategist_node(state: AgentState) -> Dict[str, Any]:
     structured_llm = llm.with_structured_output(StrategyHypothesis)
     
     system_prompt = _read_prompt("strategist")
-    human_content = f"Here is the Tech Summary:\n{state.get('tech_summary', {})}"
+    strategies_kb = _read_strategies()
+    
+    human_content = f"Here is the Tech Summary:\n{state.get('tech_summary', {})}\n\n"
+    human_content += f"Available Trading Strategies (Knowledge Base):\n{strategies_kb}"
     
     response = structured_llm.invoke([
         SystemMessage(content=system_prompt),

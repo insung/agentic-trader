@@ -16,8 +16,9 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
 # 기본 저장 경로
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DEFAULT_REPORT_DIR = os.path.join(PROJECT_ROOT, "docs", "trading_logs", "backtest_results")
+# reporting.py 위치: backend/features/trading/ → dirname 4번으로 프로젝트 루트 도달
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+DEFAULT_REPORT_DIR = os.path.join(PROJECT_ROOT, "backtests", "reports")
 
 
 def _calculate_statistics(trades: List[Dict[str, Any]], initial_balance: float, final_balance: float) -> Dict[str, Any]:

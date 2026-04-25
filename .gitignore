@@ -22,7 +22,6 @@ __pycache__/
 htmlcov/
 .pytest_cache/
 
-# Backtest data and results
-backtests/data/
-backtests/results/
-docs/trading_logs/
+# Backtest data, results, reports & trading logs
+backtests/
+trading_logs/

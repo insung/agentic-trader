@@ -69,4 +69,4 @@ backtest-clean:
 	@echo "Cleaning backtest data and results..."
 	rm -rf backtests/data/*.csv
 	rm -rf backtests/results/*.json
-	rm -rf docs/trading_logs/backtest_results/*
+	rm -rf backtests/reports/*

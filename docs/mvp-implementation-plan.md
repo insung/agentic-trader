@@ -85,6 +85,6 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
 ### Phase 7: RAG 고도화 및 다중 자산(Multi-Asset) 포트폴리오 (예정)
 *   **목표:** 스스로 학습하는 지식 베이스 구축과 거래 종목 확장.
 *   **계획:**
-    *   `Risk Reviewer`가 남긴 매매 일지(`docs/trading_logs/`)를 ChromaDB 등 벡터 데이터베이스에 임베딩.
+    *   `Risk Reviewer`가 남긴 매매 일지(`trading_logs/`)를 ChromaDB 등 벡터 데이터베이스에 임베딩.
     *   `Chief Trader`가 과거의 유사한 차트 패턴이나 실패했던 매매 기록을 벡터 검색(RAG)하여 실수를 반복하지 않도록 기억력(Memory) 부여.
     *   EURUSD 단일 종목에서 벗어나 나스닥(US100), 금(XAUUSD), 비트코인(BTCUSD) 등 다중 자산 병렬 트레이딩 파이프라인 가동.

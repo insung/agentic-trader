@@ -91,8 +91,8 @@ Agentic Trader는 전략을 파이썬 코드로 하드코딩하지 않습니다.
 
 ### 5-4. 결과 확인
 생성된 리포트는 다음 경로에서 확인할 수 있습니다.
-- **마크다운 리포트**: `docs/trading_logs/backtest_results/backtest_EURUSD_YYYYMMDD.md`
-- **시각화 차트**: 리포트와 동일한 폴더 내의 `.png` 파일
+- **마크다운 리포트**: `backtests/reports/backtest_EURUSD_YYYYMMDD.md`
+- **시각화 차트**: `backtests/reports/chart_EURUSD_YYYYMMDD.png`
 
 ---
 

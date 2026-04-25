@@ -273,7 +273,7 @@ def risk_reviewer_node(state: AgentState) -> Dict[str, Any]:
         review_log = response.model_dump()
         
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        docs_dir = os.path.join(base_dir, "docs", "trading_logs")
+        docs_dir = os.path.join(base_dir, "trading_logs")
         os.makedirs(docs_dir, exist_ok=True)
         
         safe_filename = review_log.get("save_path", f"review_{datetime.now().strftime('%Y%m%d_%H%M')}.md")

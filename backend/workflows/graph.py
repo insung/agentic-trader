@@ -5,8 +5,6 @@ from backend.workflows.nodes import (
     tech_analyst_node,
     strategist_node,
     chief_trader_node,
-    execute_order_node,
-    risk_reviewer_node
 )
 
 def fetch_data_router(state: AgentState) -> str:
@@ -32,7 +30,10 @@ def create_workflow() -> StateGraph:
     """
     Creates and compiles the LangGraph StateGraph pipeline.
     Connects nodes in sequence:
-    fetch_data -> tech_analyst -> strategist -> chief_trader -> execute_order -> risk_reviewer
+    fetch_data -> tech_analyst -> strategist -> chief_trader
+
+    Order execution and post-trade review are handled outside the decision graph.
+    A review must only be written after the resulting position has actually closed.
     """
     workflow = StateGraph(AgentState)
     
@@ -41,8 +42,6 @@ def create_workflow() -> StateGraph:
     workflow.add_node("tech_analyst", tech_analyst_node)
     workflow.add_node("strategist", strategist_node)
     workflow.add_node("chief_trader", chief_trader_node)
-    workflow.add_node("execute_order", execute_order_node)
-    workflow.add_node("risk_reviewer", risk_reviewer_node)
     
     # Define edges (sequence of execution)
     workflow.add_edge(START, "fetch_data")
@@ -62,9 +61,7 @@ def create_workflow() -> StateGraph:
     )
     
     workflow.add_edge("strategist", "chief_trader")
-    workflow.add_edge("chief_trader", "execute_order")
-    workflow.add_edge("execute_order", "risk_reviewer")
-    workflow.add_edge("risk_reviewer", END)
+    workflow.add_edge("chief_trader", END)
     
     return workflow
 

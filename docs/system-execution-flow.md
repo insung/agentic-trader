@@ -13,7 +13,7 @@ sequenceDiagram
     participant Core as Guardrails (backend/core)
     participant MT5 as MT5 Client (backend/services)
 
-    User->>FastAPI: Trigger Trading Cycle (POST /api/v1/trigger)
+    User->>FastAPI: Trigger Trading Cycle (POST /api/v1/trade/trigger)
     activate FastAPI
     FastAPI->>Graph: Initialize Workflow (Graph Start)
     activate Graph
@@ -54,12 +54,16 @@ sequenceDiagram
     activate MT5
     MT5-->>FastAPI: Execution Result (Ticket, Price)
     deactivate MT5
-    
-    %% Async Review (Optional)
-    FastAPI->>Graph: 7. Run Risk Reviewer (Async Node 6)
+    FastAPI->>FastAPI: 7. Persist tracked position (Local JSON)
     
     FastAPI-->>User: 200 OK (Trade Executed)
     deactivate FastAPI
+
+    loop Polling or POST /api/v1/trade/reconcile
+        FastAPI->>MT5: Check open positions / deal history
+        MT5-->>FastAPI: Closed trade, if any
+        FastAPI->>Graph: Run Risk Reviewer only after close
+    end
 ```
 
 ---
@@ -82,7 +86,9 @@ sequenceDiagram
         Runner->>Graph: app.invoke(mocked_state)
         Graph->>Graph: Agentic Analysis (Flash Model)
         Graph-->>Runner: Return Decision (BUY/SELL/WAIT)
-        Runner->>Runner: Simulate Exit (SL/TP check)
+        Runner->>Runner: Open one position or keep existing position
+        Runner->>Runner: Check elapsed candles for SL/TP
+        Runner->>Graph: Run Risk Reviewer only when position closes
         Runner->>Runner: Record PnL & Equity
     end
     Runner->>Report: Generate Statistics & Chart
@@ -94,3 +100,4 @@ sequenceDiagram
 2. **Fault-Tolerant Graph:** 각 LLM 노드는 API 실패 시 자동 재시도하며, 필터 라우팅을 통해 횡보장에서 조기 종료합니다.
 3. **Execution Interceptor:** LangGraph 출력을 `backend/core/guardrails`에서 최종 검증한 뒤 `mt5_client`로 전달하는 실행 접착제 로직이 포함되어 있습니다.
 4. **Lot Size Override:** AI가 아무리 큰 비중을 베팅하려 해도, 가드레일 모듈이 잔고의 1%만 잃도록 랏(Lot) 수를 강제 재계산(Override)하여 MT5로 전송합니다.
+5. **Post-Close Review:** Risk Reviewer는 주문 직후가 아니라 포지션 청산이 확인된 뒤에만 매매 일지를 생성합니다.

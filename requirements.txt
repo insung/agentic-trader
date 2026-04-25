@@ -21,3 +21,4 @@ matplotlib>=3.7.0
 # Utilities
 python-dotenv>=1.0.0
 tenacity==8.2.3
+pytest>=8.0.0

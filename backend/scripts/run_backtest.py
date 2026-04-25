@@ -19,6 +19,9 @@ from unittest.mock import patch, MagicMock
 
 import pandas as pd
 
+from backend.features.trading.guardrails import validate_order_prices
+from backend.features.trading.position_tracker import build_decision_context, review_closed_trade
+
 # 프로젝트 루트를 기준으로 경로 설정
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -26,6 +29,12 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 DEFAULT_INITIAL_BALANCE = 10_000.0
 LOOKBACK_CANDLES = 100  # 각 시점에서 에이전트에게 보여줄 과거 캔들 수
 STEP_INTERVAL = 5       # 몇 캔들마다 파이프라인을 호출할지 (비용 절감)
+
+
+def _model_to_dict(value):
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    return value
 
 
 class BacktestEngine:
@@ -63,6 +72,7 @@ class BacktestEngine:
         # 결과 기록
         self.trades: List[Dict[str, Any]] = []
         self.equity_curve: List[Dict[str, Any]] = []
+        self.open_position: Optional[Dict[str, Any]] = None
 
     def _build_mock_ohlcv(self, window: pd.DataFrame) -> pd.DataFrame:
         """과거 데이터의 특정 윈도우를 fetch_ohlcv가 반환하는 형태로 가공합니다."""
@@ -90,55 +100,74 @@ class BacktestEngine:
             "currency": "USD",
         }
 
-    def _evaluate_trade(self, trade: Dict[str, Any], future_candles: pd.DataFrame) -> Dict[str, Any]:
-        """
-        매매 결정 이후의 캔들들을 순회하여 SL/TP 도달 여부를 판정합니다.
-        최대 step_interval * 5 개의 캔들까지 관찰합니다.
-        """
-        action = trade["action"].upper()
-        entry_price = trade["entry_price"]
-        sl = trade["sl"]
-        tp = trade["tp"]
-        lot_size = trade["lot_size"]
+    def _calculate_pnl(self, position: Dict[str, Any], exit_price: float) -> float:
+        if position["action"] == "BUY":
+            pnl = (exit_price - position["entry_price"]) * position["lot_size"]
+        else:
+            pnl = (position["entry_price"] - exit_price) * position["lot_size"]
+        return float(round(pnl, 2))
 
-        if entry_price <= 0 or sl <= 0 or tp <= 0:
-            return {**trade, "result": "INVALID", "pnl": 0.0, "exit_price": entry_price, "exit_reason": "Invalid prices"}
+    def _build_closed_trade(
+        self,
+        position: Dict[str, Any],
+        candle: pd.Series,
+        result: str,
+        exit_reason: str,
+        exit_price: float,
+    ) -> Dict[str, Any]:
+        pnl = self._calculate_pnl(position, exit_price)
+        self.balance += pnl
+        return {
+            **position,
+            "exit_step": int(candle.name) if candle.name is not None else None,
+            "exit_time": str(candle["time"]),
+            "exit_price": float(exit_price),
+            "exit_reason": exit_reason,
+            "result": result,
+            "pnl": pnl,
+        }
 
-        max_look = min(len(future_candles), self.step_interval * 5)
-
-        for i in range(max_look):
-            candle = future_candles.iloc[i]
+    def _evaluate_open_position(self, position: Dict[str, Any], candles: pd.DataFrame) -> Optional[Dict[str, Any]]:
+        """Evaluate an already-open position against newly elapsed candles."""
+        for _, candle in candles.iterrows():
             high = candle["high"]
             low = candle["low"]
 
-            if action == "BUY":
-                # SL 먼저 체크 (보수적)
-                if low <= sl:
-                    pnl = (sl - entry_price) * lot_size
-                    self.balance += pnl
-                    return {**trade, "result": "SL_HIT", "pnl": round(pnl, 2), "exit_price": sl, "exit_reason": "Stop Loss"}
-                if high >= tp:
-                    pnl = (tp - entry_price) * lot_size
-                    self.balance += pnl
-                    return {**trade, "result": "TP_HIT", "pnl": round(pnl, 2), "exit_price": tp, "exit_reason": "Take Profit"}
-            elif action == "SELL":
-                if high >= sl:
-                    pnl = (entry_price - sl) * lot_size
-                    self.balance += pnl
-                    return {**trade, "result": "SL_HIT", "pnl": round(pnl, 2), "exit_price": sl, "exit_reason": "Stop Loss"}
-                if low <= tp:
-                    pnl = (entry_price - tp) * lot_size
-                    self.balance += pnl
-                    return {**trade, "result": "TP_HIT", "pnl": round(pnl, 2), "exit_price": tp, "exit_reason": "Take Profit"}
+            if position["action"] == "BUY":
+                if low <= position["sl"]:
+                    return self._build_closed_trade(position, candle, "SL_HIT", "Stop Loss", position["sl"])
+                if high >= position["tp"]:
+                    return self._build_closed_trade(position, candle, "TP_HIT", "Take Profit", position["tp"])
+            elif position["action"] == "SELL":
+                if high >= position["sl"]:
+                    return self._build_closed_trade(position, candle, "SL_HIT", "Stop Loss", position["sl"])
+                if low <= position["tp"]:
+                    return self._build_closed_trade(position, candle, "TP_HIT", "Take Profit", position["tp"])
 
-        # SL/TP 도달하지 못한 경우 마지막 캔들의 종가로 청산
-        last_close = future_candles.iloc[max_look - 1]["close"] if max_look > 0 else entry_price
-        if action == "BUY":
-            pnl = (last_close - entry_price) * lot_size
-        else:
-            pnl = (entry_price - last_close) * lot_size
-        self.balance += pnl
-        return {**trade, "result": "TIMEOUT", "pnl": round(pnl, 2), "exit_price": last_close, "exit_reason": "Max candles reached"}
+        return None
+
+    def _review_closed_trade(self, closed_trade: Dict[str, Any]) -> None:
+        review_closed_trade(closed_trade.get("decision_context", {}), closed_trade)
+
+    def _close_open_position_at_end(self) -> None:
+        if not self.open_position:
+            return
+
+        last_candle = self.df_base.iloc[-1]
+        closed = self._build_closed_trade(
+            self.open_position,
+            last_candle,
+            "BACKTEST_END",
+            "Backtest End",
+            float(last_candle["close"]),
+        )
+        self.trades.append(closed)
+        self._review_closed_trade(closed)
+        self.open_position = None
+        print(
+            f"   ⏹ {closed['action']} @ {closed['entry_price']:.5f} → "
+            f"{closed['exit_reason']} @ {closed['exit_price']:.5f} | PnL: ${closed['pnl']:.2f}"
+        )
 
     def run(self) -> List[Dict[str, Any]]:
         """
@@ -156,8 +185,8 @@ class BacktestEngine:
         graph = get_compiled_graph()
 
         start_idx = LOOKBACK_CANDLES
-        step_positions = range(start_idx, total_candles - self.step_interval, self.step_interval)
-        total_steps = len(list(step_positions))
+        step_positions = list(range(start_idx, total_candles, self.step_interval))
+        total_steps = len(step_positions)
 
         print(f"\n🚀 백테스트 시작: {self.symbol}")
         print(f"   총 {total_steps}개 시점에서 파이프라인 호출 예정")
@@ -165,7 +194,7 @@ class BacktestEngine:
         print(f"   Step Interval: {self.step_interval} 캔들")
         print("=" * 60)
 
-        for step_num, i in enumerate(range(start_idx, total_candles - self.step_interval, self.step_interval), 1):
+        for step_num, i in enumerate(step_positions, 1):
             current_time = self.df_base.iloc[i]["time"]
             current_candle = self.df_base.iloc[i]
 
@@ -194,6 +223,28 @@ class BacktestEngine:
                  }):
 
                 try:
+                    if self.open_position:
+                        start = int(self.open_position.get("last_checked_index", self.open_position["entry_index"])) + 1
+                        elapsed_candles = self.df_base.iloc[start : i + 1]
+                        closed_trade = self._evaluate_open_position(self.open_position, elapsed_candles)
+
+                        if closed_trade:
+                            self.trades.append(closed_trade)
+                            self._review_closed_trade(closed_trade)
+                            self.open_position = None
+                            self.equity_curve.append({"time": str(current_time), "balance": self.balance, "action": "CLOSED"})
+                            result_emoji = "✅" if closed_trade["pnl"] >= 0 else "❌"
+                            print(
+                                f"   {result_emoji} {closed_trade['action']} @ {closed_trade['entry_price']:.5f} → "
+                                f"{closed_trade['exit_reason']} @ {closed_trade['exit_price']:.5f} | PnL: ${closed_trade['pnl']:.2f}"
+                            )
+                            continue
+
+                        self.open_position["last_checked_index"] = i
+                        self.equity_curve.append({"time": str(current_time), "balance": self.balance, "action": "OPEN"})
+                        print(f"   ⏳ 포지션 보유 중: {self.open_position['action']} from {self.open_position['entry_time']}")
+                        continue
+
                     initial_state = {"symbol": self.symbol, "timeframes": self.timeframes}
                     final_state = {}
 
@@ -206,7 +257,7 @@ class BacktestEngine:
                         print(f"   ⚠️ 에러 발생: {final_state.get('error_message', 'Unknown')}")
                         continue
 
-                    final_order = final_state.get("final_order")
+                    final_order = _model_to_dict(final_state.get("final_order"))
                     if not final_order:
                         print("   📊 매매 신호 없음 (Tech Analyst가 시장 비적합 판단)")
                         self.equity_curve.append({"time": str(current_time), "balance": self.balance, "action": "SKIP"})
@@ -219,9 +270,16 @@ class BacktestEngine:
                         continue
 
                     # 유효한 매매 결정
-                    sl = final_order.get("sl_price", final_order.get("sl", 0.0))
-                    tp = final_order.get("tp_price", final_order.get("tp", 0.0))
-                    entry_price = mock_price["ask"] if action.upper() == "BUY" else mock_price["bid"]
+                    sl = float(final_order.get("sl_price", final_order.get("sl", 0.0)))
+                    tp = float(final_order.get("tp_price", final_order.get("tp", 0.0)))
+                    entry_price = float(mock_price["ask"] if action.upper() == "BUY" else mock_price["bid"])
+                    if not validate_order_prices(action, entry_price, sl, tp):
+                        print(
+                            f"   ⛔ 가드레일: SL/TP 방향 또는 손익비 오류 "
+                            f"(action={action}, entry={entry_price:.5f}, sl={sl:.5f}, tp={tp:.5f})"
+                        )
+                        self.equity_curve.append({"time": str(current_time), "balance": self.balance, "action": "REJECTED"})
+                        continue
 
                     # 1% 룰로 랏 계산
                     from backend.features.trading.guardrails import enforce_one_percent_rule
@@ -232,34 +290,38 @@ class BacktestEngine:
                         continue
 
                     trade_record = {
+                        "trade_id": f"BT-{step_num}",
                         "step": step_num,
+                        "entry_step": step_num,
                         "time": str(current_time),
+                        "entry_time": str(current_time),
+                        "entry_index": i,
+                        "last_checked_index": i,
                         "action": action.upper(),
                         "entry_price": entry_price,
                         "sl": sl,
                         "tp": tp,
-                        "lot_size": lot_size,
+                        "lot_size": float(lot_size),
                         "reasoning": final_order.get("reasoning", final_order.get("final_reasoning", "")),
                     }
-
-                    # SL/TP 도달 여부 판정 (가장 작은 타임프레임 기준)
-                    future_candles = self.df_base.iloc[i + 1 : i + 1 + self.step_interval * 5]
-                    if len(future_candles) > 0:
-                        evaluated = self._evaluate_trade(trade_record, future_candles)
-                    else:
-                        evaluated = {**trade_record, "result": "NO_DATA", "pnl": 0.0, "exit_price": entry_price, "exit_reason": "No future data"}
-
-                    self.trades.append(evaluated)
+                    order_result = {
+                        "success": True,
+                        "ticket": step_num,
+                        "executed_price": entry_price,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                    trade_record["decision_context"] = build_decision_context(final_state, order_result)
+                    self.open_position = trade_record
                     self.equity_curve.append({"time": str(current_time), "balance": self.balance, "action": action})
-
-                    result_emoji = "✅" if evaluated["pnl"] >= 0 else "❌"
-                    print(f"   {result_emoji} {action} @ {entry_price:.5f} → {evaluated['exit_reason']} @ {evaluated['exit_price']:.5f} | PnL: ${evaluated['pnl']:.2f}")
+                    print(f"   📌 {action} opened @ {entry_price:.5f} | SL: {sl:.5f} | TP: {tp:.5f}")
 
                 except Exception as e:
                     print(f"   💥 파이프라인 에러: {e}")
                     import traceback
                     traceback.print_exc()
                     continue
+
+        self._close_open_position_at_end()
 
         print("\n" + "=" * 60)
         print(f"🏁 백테스트 완료!")

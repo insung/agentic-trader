@@ -6,18 +6,18 @@
 1. **MetaTrader 5 실행:** Wine 환경에서 MT5 터미널이 실행 중이어야 합니다.
 2. **자동 매매 허용:** MT5의 `[도구] -> [옵션] -> [전문가 조언자]` 탭에서 **"알고리즘 매매 허용"**이 체크되어 있어야 합니다.
 3. **가상 환경 활성화:** `.venv` 가상 환경이 설정되어 있고 필요한 패키지가 설치되어 있어야 합니다.
+4. **의존성 설치:** 처음 실행하는 환경에서는 `make install`을 먼저 실행합니다. `make test`는 `pytest`가 설치되어 있어야 합니다.
 
 ---
 
-## 🚀 1단계: MT5 API 연결 테스트
-파이썬 백엔드가 Wine 내부의 MT5 터미널과 통신할 수 있는지 확인합니다.
+## 🚀 1단계: 전체 테스트 및 MT5 연결 확인
+파이썬 백엔드의 단위 테스트를 실행합니다. MT5 패키지가 없는 네이티브 Linux 환경에서는 MT5 연결 테스트가 skip될 수 있으며, Wine 환경에서는 실제 연결까지 확인합니다.
 
 ```bash
-# 프로젝트 루트 디렉토리에서 실행
-PYTHONPATH=. .venv/bin/python tests/test_mt5_connection.py
+make test
 ```
-*   **성공 시:** `MT5 initialized successfully` 메시지가 출력됩니다.
-*   **실패 시:** MT5 터미널이 켜져 있는지, 환경 변수(`MT5_PATH`)가 올바른지 확인하십시오.
+*   **성공 시:** 전체 테스트가 통과합니다.
+*   **MT5 연결 테스트 실패 시:** MT5 터미널이 켜져 있는지, 환경 변수(`MT5_PATH`)가 올바른지 확인하십시오.
 
 ---
 
@@ -25,10 +25,14 @@ PYTHONPATH=. .venv/bin/python tests/test_mt5_connection.py
 트레이딩 오케스트레이터(LangGraph)를 제어하는 API 서버를 실행합니다.
 
 ```bash
-# 서버 실행 (로그 확인을 위해 터미널 창 유지)
-PYTHONPATH=. .venv/bin/python backend/main.py
+# Native Python 서버 실행 (MT5 미연결, API/문서/일부 테스트용)
+make run
+
+# MT5 연동 트레이딩 테스트용
+make run-wine
 ```
-서버가 성공적으로 시작되면 `http://0.0.0.0:8000`에서 요청을 대기합니다.
+서버가 성공적으로 시작되면 기본적으로 `http://127.0.0.1:8001`에서 요청을 대기합니다. 포트를 바꾸려면 `make run PORT=8002`처럼 실행합니다.
+실제 시장 데이터 조회와 live 주문 테스트는 MT5 패키지가 로드되는 Wine Python 환경(`make run-wine`)에서 수행해야 합니다.
 
 ---
 
@@ -37,9 +41,15 @@ PYTHONPATH=. .venv/bin/python backend/main.py
 
 ```bash
 # EURUSD 종목에 대해 트레이딩 루프 시작
-curl -X POST http://localhost:8000/api/v1/trade/trigger \
+make trigger SYMBOL=EURUSD TIMEFRAMES=M5 MODE=paper
+```
+
+직접 `curl`을 사용할 경우 `timeframes`는 문자열이 아니라 JSON 배열이어야 합니다.
+
+```bash
+curl -X POST http://localhost:8001/api/v1/trade/trigger \
      -H "Content-Type: application/json" \
-     -d '{"symbol": "EURUSD"}'
+     -d '{"symbol": "EURUSD", "timeframes": ["M5"], "mode": "paper"}'
 ```
 
 ---
@@ -53,6 +63,27 @@ curl -X POST http://localhost:8000/api/v1/trade/trigger \
 4.  **Chief Trader Decision:** 최종 BUY/SELL/WAIT 결정
 5.  **Guardrails Check:** 리스크 관리 규칙 통과 여부 및 랏(Lot) 수 재계산
 6.  **Execution:** 주문 전송 시도
+7.  **Position Tracking:** 주문 성공 시 `trading_logs/tracked_positions.json`에 열린 포지션 기록
+8.  **Post-Close Review:** 포지션이 청산된 뒤에만 `trading_logs/review_*.md` 생성
+
+### 4-1. 청산 동기화 및 복기 생성
+서버에는 자동 reconcile 루프가 있으며 기본 30초마다 추적 중인 포지션의 청산 여부를 확인합니다. 간격은 서버 실행 전에 `POSITION_RECONCILE_INTERVAL_SECONDS` 환경 변수로 조절할 수 있습니다.
+
+수동으로 즉시 확인하려면 다음 명령을 사용합니다.
+
+```bash
+make reconcile
+```
+
+또는 직접 API를 호출합니다.
+
+```bash
+curl -X POST http://localhost:8001/api/v1/trade/reconcile
+```
+
+응답의 `reviewed_count`가 1 이상이면 청산된 포지션에 대해 Risk Reviewer가 실행된 것입니다. 복기 파일은 `trading_logs/review_*.md`에 저장됩니다.
+
+실전/Paper 운영 중 컴퓨터 재시작, VPS 운영, MT5에서 매매 현황을 확인하는 절차는 [Live/Paper Operation Runbook](./live-operation-runbook.md)을 참고하십시오.
 
 ---
 
@@ -60,15 +91,25 @@ curl -X POST http://localhost:8000/api/v1/trade/trigger \
 
 과거 데이터를 사용하여 전략의 수익성을 시뮬레이션하고 상세 리포트를 생성합니다. 단순한 룰 기반 백테스트가 아닌, **AI 에이전트들의 시간을 과거 특정 시점으로 되돌려 실전과 똑같이 고민하고 매매하게 만드는 시뮬레이션**입니다.
 
-### 백테스트 작동 원리 (Time-Machine Logic)
+### 백테스트 작동 원리 (Position-Based Logic)
 1. **과거 차트 자르기 (Window Slicing):** 현재 시점을 기준으로 과거 100개의 캔들만 잘라 AI에게 제공합니다. AI는 미래를 볼 수 없습니다.
 2. **실시간 API 가로채기 (Mocking):** 백테스터가 실시간 MT5 함수(`fetch_ohlcv`, `get_current_price`)를 가로채어 과거 캔들의 종가를 실시간 가격인 것처럼 속여 반환합니다.
-3. **가드레일 및 결과 판정:** Chief Trader가 주문을 내면 1% 리스크 룰이 적용되며, 이후 미래 캔들을 순회하며 손절가(SL)나 익절가(TP) 도달 여부를 추적하여 PnL을 가상 잔고에 반영합니다.
+3. **포지션 보유:** Chief Trader가 BUY/SELL을 내면 1% 리스크 룰이 적용되고, 백테스터는 즉시 미래 전체를 훑어 결과를 확정하지 않습니다. 열린 포지션을 상태로 보유합니다.
+4. **청산 판정:** 이후 Step들이 진행되면서 새로 지난 캔들의 high/low가 SL 또는 TP에 닿았는지 확인합니다. 청산되면 PnL을 잔고에 반영하고 그때 Risk Reviewer가 복기를 작성합니다.
+5. **종료 처리:** 백테스트 종료 시점까지 열린 포지션이 남아 있으면 마지막 캔들 종가로 `BACKTEST_END` 청산 처리하고 복기합니다.
+
+### 백테스트 파라미터 이해 (Steps vs Candles)
+백테스트 로그에 나오는 `step 2/245`와 같은 지표는 다음과 같은 로직으로 계산됩니다:
+- **Lookback Window (100 Candles):** AI가 시장 상황을 판단하려면 최소한의 과거 데이터가 필요합니다. 따라서 CSV 데이터의 **첫 100개 캔들**은 분석용 컨텍스트로만 사용하고 매매는 수행하지 않습니다. (실매매에서도 항상 최근 100개 캔들을 가져옵니다.)
+- **Step Interval (5 Candles):** 모든 캔들마다 AI를 호출하면 비용이 과다하므로, 기본적으로 **5캔들마다 한 번씩** 판단을 내립니다.
+- **계산식:** `(총 캔들 수 - 100) / 5 = 총 Step 수`
+- **포지션 보유 중 Step:** 열린 포지션이 있으면 새 AI 판단을 실행하지 않고, 해당 Step까지 경과한 캔들로 기존 포지션의 SL/TP만 확인합니다.
+- **설정 변경:** 기본 Step Interval은 5캔들이며, 실행 시 `make backtest-run ... STEP=10`처럼 조절할 수 있습니다.
 
 ### 5-1. 과거 데이터 수집
 MT5 터미널이 실행 중인 상태에서 Wine Python을 통해 데이터를 수집합니다.
 ```bash
-make backtest-fetch SYMBOL=BTCUSD FROM=2024-01-01 TO=2024-01-31 TIMEFRAME=M5
+make backtest-fetch SYMBOL=BTCUSD FROM=2024-01-01 TO=2024-01-31 TIMEFRAMES=M5
 ```
 - 데이터는 `backtests/data/` 디렉토리에 저장됩니다.
 
@@ -79,9 +120,10 @@ make backtest-fetch SYMBOL=BTCUSD FROM=2024-01-01 TO=2024-01-31 TIMEFRAME=M5
 make backtest-run DATA=backtests/data/BTCUSD_5_20240101_20240131.csv
 
 # 종목과 타임프레임을 명시적으로 주입하는 방법
-make backtest-run DATA=backtests/data/BTCUSD_5_20240101_20240131.csv SYMBOL=BTCUSD TIMEFRAME=M5
+make backtest-run DATA=backtests/data/BTCUSD_5_20240101_20240131.csv SYMBOL=BTCUSD TIMEFRAMES=M5
 ```
 - 완료 후 자동으로 차트와 마크다운 리포트가 생성됩니다.
+- 청산된 거래가 있으면 `trading_logs/review_*.md`도 생성됩니다. HOLD/WAIT 또는 포지션 미진입 Step은 복기 파일을 만들지 않습니다.
 
 ### 5-3. 백테스트 매매 전략 변경 (Dynamic Strategy Injection)
 Agentic Trader는 전략을 파이썬 코드로 하드코딩하지 않습니다. 전략을 변경하려면 다음 단계를 따르세요.
@@ -93,6 +135,18 @@ Agentic Trader는 전략을 파이썬 코드로 하드코딩하지 않습니다.
 생성된 리포트는 다음 경로에서 확인할 수 있습니다.
 - **마크다운 리포트**: `backtests/reports/backtest_EURUSD_YYYYMMDD.md`
 - **시각화 차트**: `backtests/reports/chart_EURUSD_YYYYMMDD.png`
+- **원본 결과 JSON**: `backtests/results/backtest_EURUSD_YYYYMMDD_HHMMSS.json`
+- **청산 후 복기 로그**: `trading_logs/review_*.md`
+- **실전/Paper 추적 상태**: `trading_logs/tracked_positions.json`, `trading_logs/reviewed_trades.json`
+
+### 5-5. Lessons Learned 해석 기준
+`Lessons Learned`는 더 이상 Step별 판단 로그가 아닙니다. 다음 조건을 만족할 때만 생성됩니다.
+
+- 백테스트: 열린 포지션이 `TP_HIT`, `SL_HIT`, 또는 `BACKTEST_END`로 닫힌 경우
+- Paper: `reconcile`이 현재 가격 기준 TP/SL 도달을 확인한 경우
+- Live: `reconcile`이 MT5 open positions/history를 통해 추적 ticket의 청산을 확인한 경우
+
+따라서 주문 직후 `review_*.md`가 바로 생기지 않는 것이 정상입니다. 포지션이 열려 있는 동안에는 `tracked_positions.json`에 상태가 남아 있어야 합니다.
 
 ---
 

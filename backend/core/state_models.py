@@ -63,3 +63,5 @@ class AgentStateSchema(BaseModel):
     
     # Node 5: Risk Reviewer
     review_log: Dict[str, Any] = Field(default_factory=dict)
+    decision_context: Dict[str, Any] = Field(default_factory=dict)
+    closed_trade: Dict[str, Any] = Field(default_factory=dict)

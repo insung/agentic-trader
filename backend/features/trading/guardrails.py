@@ -53,6 +53,36 @@ def validate_risk_reward_ratio(entry_price: float, sl_price: float, tp_price: fl
     rr_ratio = expected_profit / expected_loss
     return rr_ratio >= 2.0
 
+def validate_order_prices(action: str, entry_price: float, sl_price: float, tp_price: float, min_rr: float = 2.0) -> bool:
+    """
+    Action-aware SL/TP validation.
+
+    BUY:  SL < entry < TP
+    SELL: TP < entry < SL
+    The resulting risk/reward ratio must be at least min_rr.
+    """
+    if entry_price <= 0 or sl_price <= 0 or tp_price <= 0:
+        return False
+
+    action = action.upper()
+    if action == "BUY":
+        if not (sl_price < entry_price < tp_price):
+            return False
+        expected_profit = tp_price - entry_price
+        expected_loss = entry_price - sl_price
+    elif action == "SELL":
+        if not (tp_price < entry_price < sl_price):
+            return False
+        expected_profit = entry_price - tp_price
+        expected_loss = sl_price - entry_price
+    else:
+        return False
+
+    if expected_loss <= 0:
+        return False
+
+    return (expected_profit / expected_loss) >= min_rr
+
 def enforce_one_percent_rule(account_balance: float, entry_price: float, sl_price: float) -> float:
     """
     Rule 1: 1% 룰 기반 최대 랏수 강제 계산기

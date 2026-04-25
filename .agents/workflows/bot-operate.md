@@ -27,8 +27,8 @@ Run: `make trigger SYMBOL=XAUUSD`
 
 ## 3. 로그 및 매매 일지 모니터링
 서버에서 포지션을 성공적으로 체결하고 청산했는지 로그를 점검합니다.
-특히 5단계 `Risk Reviewer` 에이전트가 `docs/trading_logs/` 디렉토리 내에 매매 일지(Markdown)를 성공적으로 생성했는지 확인합니다.
-Run: `ls -la docs/trading_logs/`
+`Risk Reviewer`는 주문 직후가 아니라 포지션 청산 후 실행됩니다. 청산된 거래가 있다면 `trading_logs/` 디렉토리 내에 매매 일지(Markdown)가 생성되는지 확인합니다.
+Run: `ls -la trading_logs/`
 
 ## 4. 최종 운영 보고
 이번 사이클에서 어떤 전략(Strategy)이 주입되었고, 최종 포지션(BUY/SELL)이 어떻게 결정되었는지 요약하여 사용자에게 보고합니다. 가드레일(1% 룰 등)에 막혀 거절되었다면 그 사유도 함께 보고합니다. 시장 휴장(주말)으로 중단되었다면 그 사유도 보고합니다.

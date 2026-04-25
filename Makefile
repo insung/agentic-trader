@@ -1,4 +1,4 @@
-.PHONY: test run run-wine trigger cli install venv
+.PHONY: test run run-wine trigger reconcile cli install venv
 
 # 기본 환경 변수 설정
 export PYTHONPATH := .
@@ -6,6 +6,7 @@ VENV_BIN := .venv/bin
 SYMBOL ?= EURUSD
 PORT ?= 8001
 WINEPREFIX ?= $(HOME)/.wine
+MODE ?= paper
 
 venv:
 	@echo "Checking virtual environment..."
@@ -28,10 +29,16 @@ run-wine:
 
 # 수동 트리거 (종목 선택 가능)
 trigger:
-	@echo "Triggering a manual trade for $(SYMBOL) on $(TIMEFRAMES)..."
+	@echo "Triggering a manual $(MODE) trade for $(SYMBOL) on $(TIMEFRAMES)..."
+	@TF_JSON=$$(python3 -c 'import json; print(json.dumps("$(TIMEFRAMES)".split(",")))'); \
 	curl -s -X POST "http://127.0.0.1:$(PORT)/api/v1/trade/trigger" \
 		-H "Content-Type: application/json" \
-		-d '{"symbol": "$(SYMBOL)", "timeframes": "$(TIMEFRAMES)", "mode": "paper"}' | python3 -m json.tool
+		-d "{\"symbol\": \"$(SYMBOL)\", \"timeframes\": $$TF_JSON, \"mode\": \"$(MODE)\"}" | python3 -m json.tool
+
+# 추적 중인 포지션 청산 여부를 수동 확인하고 청산된 거래만 복기
+reconcile:
+	@echo "Reconciling tracked positions..."
+	curl -s -X POST "http://127.0.0.1:$(PORT)/api/v1/trade/reconcile" | python3 -m json.tool
 
 # 대화형 CLI 실행
 cli:
@@ -47,6 +54,7 @@ TIMEFRAMES ?= M5,H1
 DAYS ?= 30
 FROM ?=
 TO ?=
+STEP ?= 5
 
 # 과거 데이터 수집 (예: make backtest-fetch SYMBOL=EURUSD FROM=2023-01-01 TO=2023-01-31)
 backtest-fetch:
@@ -61,8 +69,9 @@ backtest-fetch:
 # 백테스트 실행 (DATA 변수에 콤마로 구분된 여러 CSV 경로 지정 가능)
 # 예: make backtest-run DATA=backtests/data/EURUSD_M5_...csv,backtests/data/EURUSD_H1_...csv
 backtest-run: venv
+	@if [ -z "$(DATA)" ]; then echo "DATA is required. Example: make backtest-run DATA=backtests/data/EURUSD_M5.csv"; exit 1; fi
 	@echo "Running agentic backtest using data: $(DATA)..."
-	$(VENV_BIN)/python -m backend.scripts.run_backtest --data $(DATA) --symbol $(SYMBOL) --timeframes $(TIMEFRAMES) --report
+	$(VENV_BIN)/python -m backend.scripts.run_backtest --data $(DATA) --symbol $(SYMBOL) --timeframes $(TIMEFRAMES) --step $(STEP) --report
 
 # 백테스트 데이터 및 결과 정리
 backtest-clean:

@@ -3,6 +3,7 @@ MetaTrader 5 (MT5) API 연동 래퍼(Wrapper) 모듈
 오직 이 모듈을 통해서만 MT5 데스크톱 터미널과 IPC 통신을 수행합니다.
 """
 import os
+from datetime import datetime, timedelta
 import pandas as pd
 from dotenv import load_dotenv
 
@@ -142,6 +143,32 @@ def get_current_price(symbol: str) -> dict:
         "last": tick.last,
         "time": tick.time,
     }
+
+def get_open_positions(symbol: str = None) -> list[dict]:
+    """Return currently open MT5 positions as dictionaries."""
+    if mt5 is None:
+        return []
+
+    positions = mt5.positions_get(symbol=symbol) if symbol else mt5.positions_get()
+    if positions is None:
+        print(f"❌ Failed to get open positions. Error: {mt5.last_error()}")
+        return []
+
+    return [position._asdict() for position in positions]
+
+def get_deals_history(days: int = 14) -> list[dict]:
+    """Return recent MT5 deal history as dictionaries."""
+    if mt5 is None:
+        return []
+
+    date_to = datetime.now()
+    date_from = date_to - timedelta(days=days)
+    deals = mt5.history_deals_get(date_from, date_to)
+    if deals is None:
+        print(f"❌ Failed to get deal history. Error: {mt5.last_error()}")
+        return []
+
+    return [deal._asdict() for deal in deals]
 
 def send_market_order(symbol: str, action: str, lot_size: float, sl: float, tp: float) -> dict:
     """

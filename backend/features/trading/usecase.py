@@ -3,7 +3,7 @@ from backend.core.exceptions import GuardrailViolationError, OrderExecutionError
 from backend.features.trading.guardrails import (
     validate_daily_drawdown_lock,
     validate_max_trades_per_day,
-    validate_risk_reward_ratio,
+    validate_order_prices,
     enforce_one_percent_rule,
     validate_sl_tp_modification_limit
 )
@@ -37,8 +37,8 @@ class TradeExecutionUseCase:
             raise GuardrailViolationError("Maximum daily trades exceeded (>=3).")
 
         # 3. Rule 4: Risk/Reward Ratio
-        if not validate_risk_reward_ratio(order.entry_price, order.sl_price, order.tp_price):
-            raise GuardrailViolationError("Invalid Risk/Reward ratio (must be >= 2.0).")
+        if not validate_order_prices(order.action.value, order.entry_price, order.sl_price, order.tp_price):
+            raise GuardrailViolationError("Invalid SL/TP direction or Risk/Reward ratio (must be >= 2.0).")
 
         # 4. Rule 1: Enforce 1% Rule for Lot Size
         safe_lot_size = enforce_one_percent_rule(account_balance, order.entry_price, order.sl_price)

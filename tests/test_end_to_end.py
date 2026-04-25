@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 import pandas as pd
 from backend.workflows.state import AgentState
 from backend.workflows.graph import get_compiled_graph
-from backend.workflows.nodes import TechSummary, StrategyHypothesis, FinalOrder, ReviewLog
+from backend.workflows.nodes import TechSummary, StrategyHypothesis, FinalOrder
 
 @patch('backend.workflows.nodes.is_market_open', return_value=True)
 @patch('backend.workflows.nodes.is_mt5_available', return_value=True)
@@ -11,13 +11,13 @@ from backend.workflows.nodes import TechSummary, StrategyHypothesis, FinalOrder,
 @patch('backend.workflows.nodes.ChatGoogleGenerativeAI')
 @patch('backend.workflows.nodes.get_account_summary')
 @patch('backend.workflows.nodes.fetch_ohlcv')
-@patch('backend.workflows.nodes.execute_mock_order')
 def test_end_to_end_trading_pipeline(
-    mock_execute_order, mock_fetch_ohlcv, mock_get_account, mock_llm,
+    mock_fetch_ohlcv, mock_get_account, mock_llm,
     mock_current_price, mock_mt5_avail, mock_market_open
 ):
     """
-    Test the entire end-to-end trading pipeline including Data Fetching, Analysis, Strategy, Trading, Execution, and Review.
+    Test the decision pipeline through Chief Trader.
+    Order execution and review are handled after the graph.
     """
     # 1. Setup Mock MT5 Data
     mock_get_account.return_value = {
@@ -70,28 +70,12 @@ def test_end_to_end_trading_pipeline(
         final_reasoning="Agree with strategy."
     )
     
-    review_log_mock = ReviewLog(
-        trade_summary="Executed a BUY order.",
-        risk_assessment="Risk is within 1% limit.",
-        lessons_learned="Good execution.",
-        save_path="review_test.md"
-    )
-    
     # Using side_effect to return different models for different node calls
     mock_structured_llm.invoke.side_effect = [
         tech_summary_mock,
         strategy_hypothesis_mock,
         final_order_mock,
-        review_log_mock
     ]
-    
-    # 3. Setup Mock Order Execution Return
-    mock_execute_order.return_value = {
-        "retcode": 10009,
-        "volume": 0.1,
-        "price": 1.0520,
-        "comment": "Mock Paper Trading Order"
-    }
 
     # 4. Execute the Graph
     graph = get_compiled_graph()
@@ -114,7 +98,7 @@ def test_end_to_end_trading_pipeline(
     assert "tech_summary" in final_state
     assert "strategy_hypothesis" in final_state
     assert "final_order" in final_state
-    assert "order_result" in final_state
-    assert "review_log" in final_state
+    assert "order_result" not in final_state
+    assert "review_log" not in final_state
     
-    assert final_state["review_log"]["trade_summary"] == "Executed a BUY order."
+    assert final_state["final_order"]["action"] == "BUY"

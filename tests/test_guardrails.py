@@ -9,6 +9,7 @@ from backend.features.trading.guardrails import (
     validate_daily_drawdown_lock,
     validate_max_trades_per_day,
     validate_risk_reward_ratio,
+    validate_order_prices,
     enforce_one_percent_rule,
     validate_sl_tp_modification_limit
 )
@@ -53,6 +54,15 @@ class TestGuardrails(unittest.TestCase):
         
         # 잘못된 값 (0 이하)
         self.assertFalse(validate_risk_reward_ratio(0.0, 10.0, 20.0))
+
+    def test_validate_order_prices_action_aware(self):
+        self.assertTrue(validate_order_prices("BUY", 100.0, 90.0, 120.0))
+        self.assertFalse(validate_order_prices("BUY", 100.0, 110.0, 80.0))
+        self.assertFalse(validate_order_prices("BUY", 100.0, 90.0, 115.0))
+
+        self.assertTrue(validate_order_prices("SELL", 100.0, 110.0, 80.0))
+        self.assertFalse(validate_order_prices("SELL", 100.0, 90.0, 80.0))
+        self.assertFalse(validate_order_prices("SELL", 100.0, 110.0, 85.0))
 
     def test_enforce_one_percent_rule(self):
         # Rule 1: 1% 룰 기반 랏수 계산

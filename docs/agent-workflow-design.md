@@ -34,8 +34,10 @@ flowchart TD
         Guard -->|"Reject"| End
         
         Guard -->|"Pass"| Exec["Execute Order\n(MT5 API)"]
+        Exec --> Track["Track Open Position\n(Local JSON)"]
+        Track --> End
         
-        Exec -->|"Result"| N_Review("Node 6: Risk Reviewer\nLLM Call")
+        Monitor["Position Reconcile Loop\n(Polling / Manual API)"] -->|"Position Closed"| N_Review("Node 6: Risk Reviewer\nLLM Call")
         N_Review -->|"Save Journal"| DB
         N_Review --> End
     end
@@ -44,7 +46,7 @@ flowchart TD
     classDef llm fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
     classDef guard fill:#ffebee,stroke:#c62828,stroke-width:2px;
     
-    class N_Data,Guard,Exec,D,W,M,C python;
+    class N_Data,Guard,Exec,Track,Monitor,D,W,M,C python;
     class N_Tech,N_Strat,N_Sent,N_Trader,N_Review llm;
 ```
 
@@ -74,6 +76,7 @@ flowchart TD
 
 ### Node 6: Risk Reviewer (LLM)
 *   **동작:** 매매가 청산된 후, 당시 Node 5가 내렸던 판단과 실제 결과를 LLM에게 주어 '반성문(Trading Journal)'을 작성하게 하고 이를 DB에 저장합니다.
+*   **주의:** 주문 실행 직후에는 실행되지 않습니다. 백테스트는 열린 포지션이 TP/SL/종료 조건에 도달했을 때, 실전/Paper는 reconcile 루프가 청산을 감지했을 때만 호출됩니다.
 
 ## 3. LangGraph의 압도적 장점
 *   **Fault-Tolerant Retry:** LLM API 호출 실패 시 지수 백오프(Exponential Backoff) 기반의 재시도 로직이 적용되어 있습니다.

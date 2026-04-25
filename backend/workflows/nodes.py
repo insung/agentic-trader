@@ -9,7 +9,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from backend.workflows.state import AgentState
 from backend.features.trading.mt5_adapter import fetch_ohlcv, get_account_summary, execute_mock_order, get_current_price, is_mt5_available
-from backend.features.trading.guardrails import enforce_one_percent_rule
+from backend.features.trading.guardrails import enforce_one_percent_rule, validate_order_prices
 from backend.features.trading.market_hours import is_market_open, get_market_status_message
 
 # Pydantic Models for Structured Output
@@ -219,13 +219,18 @@ def execute_order_node(state: AgentState) -> Dict[str, Any]:
     if not final_order:
         return {"order_result": {"success": False, "error_message": "No final_order", "timestamp": datetime.now().isoformat()}}
         
-    action = final_order.action.value if hasattr(final_order.action, 'value') else final_order.action
+    if isinstance(final_order, dict):
+        action = final_order.get("action", "HOLD")
+        sl = final_order.get("sl_price", final_order.get("sl", 0.0))
+        tp = final_order.get("tp_price", final_order.get("tp", 0.0))
+    else:
+        action = final_order.action.value if hasattr(final_order.action, 'value') else final_order.action
+        sl = final_order.sl_price
+        tp = final_order.tp_price
     if action.upper() not in ["BUY", "SELL"]:
         return {"order_result": {"success": False, "error_message": f"Action was {action}", "timestamp": datetime.now().isoformat()}}
         
     symbol = getattr(state, "symbol", "EURUSD")
-    sl = final_order.sl_price
-    tp = final_order.tp_price
     
     account_info = get_account_summary()
     balance = account_info.get("balance", 10000.0)
@@ -235,6 +240,8 @@ def execute_order_node(state: AgentState) -> Dict[str, Any]:
     entry_price = current_price.get("ask", 0.0) if action.upper() == "BUY" else current_price.get("bid", 0.0)
     if entry_price <= 0:
         return {"order_result": {"success": False, "error_message": "Could not get current price", "timestamp": datetime.now().isoformat()}}
+    if not validate_order_prices(action, entry_price, sl, tp):
+        return {"order_result": {"success": False, "error_message": "Guardrail: invalid SL/TP direction or risk/reward", "timestamp": datetime.now().isoformat()}}
     lot_size = enforce_one_percent_rule(balance, entry_price, sl)
     
     if lot_size <= 0:
@@ -250,7 +257,7 @@ def execute_order_node(state: AgentState) -> Dict[str, Any]:
     return {"order_result": order_result_dict}
 
 def risk_reviewer_node(state: AgentState) -> Dict[str, Any]:
-    """Node 5: Risk Reviewer reviews the entire process and logs the result."""
+    """Node 5: Risk Reviewer reviews a closed trade and logs the result."""
     print("[Node 5] risk_reviewer_node executed")
     llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
     structured_llm = llm.with_structured_output(ReviewLog)
@@ -258,13 +265,22 @@ def risk_reviewer_node(state: AgentState) -> Dict[str, Any]:
     system_prompt = _read_prompt("risk_reviewer")
     final_order = getattr(state, "final_order", None)
     order_result = getattr(state, "order_result", None)
+    decision_context = getattr(state, "decision_context", {}) or {}
+    closed_trade = getattr(state, "closed_trade", {}) or {}
+    if not closed_trade:
+        return {
+            "error_flag": True,
+            "error_message": "Risk Reviewer requires a closed_trade payload.",
+        }
     
     human_content = json.dumps({
         "raw_data": getattr(state, "raw_data", ""),
         "tech_summary": getattr(state, "tech_summary", {}),
         "strategy_hypothesis": getattr(state, "strategy_hypothesis", {}),
         "final_order": final_order.model_dump() if hasattr(final_order, "model_dump") else (final_order or {}),
-        "order_result": order_result.model_dump() if hasattr(order_result, "model_dump") else (order_result or {})
+        "order_result": order_result.model_dump() if hasattr(order_result, "model_dump") else (order_result or {}),
+        "decision_context": decision_context,
+        "closed_trade": closed_trade,
     }, indent=2)
     messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_content)]
     

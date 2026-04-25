@@ -8,8 +8,9 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from backend.workflows.state import AgentState
-from backend.features.trading.mt5_adapter import fetch_ohlcv, get_account_summary, execute_mock_order
+from backend.features.trading.mt5_adapter import fetch_ohlcv, get_account_summary, execute_mock_order, get_current_price, is_mt5_available
 from backend.features.trading.guardrails import enforce_one_percent_rule
+from backend.features.trading.market_hours import is_market_open, get_market_status_message
 
 # Pydantic Models for Structured Output
 class TechSummary(BaseModel):
@@ -94,16 +95,37 @@ def fetch_data_node(state: AgentState) -> Dict[str, Any]:
     print("[Node 1] fetch_data_node executed")
     symbol = getattr(state, "symbol", "EURUSD")
     
-    account_info = get_account_summary()
-    df = fetch_ohlcv(symbol, 16385, 100)
+    # 시장 휴장 체크
+    if not is_market_open():
+        msg = get_market_status_message()
+        print(f"🚫 {msg}")
+        return {"raw_data": "", "error_flag": True, "error_message": msg}
     
-    if not df.empty:
-        recent_data = df.tail(5).to_json(orient='records')
-        raw_data = f"Account Info: {account_info}\nRecent Market Data (H1): {recent_data}"
-    else:
-        raw_data = f"Account Info: {account_info}\nDummy OHLCV Data with Indicators"
+    # MT5 사용 가능 여부 체크
+    if not is_mt5_available():
+        print("❌ MT5 not available. Cannot fetch live data.")
+        return {"raw_data": "", "error_flag": True, "error_message": "MT5 not available. Run server with Wine Python."}
+    
+    account_info = get_account_summary()
+    if not account_info:
+        print("❌ Failed to get account info from MT5.")
+        return {"raw_data": "", "error_flag": True, "error_message": "MT5 account info unavailable."}
+    
+    df = fetch_ohlcv(symbol, 16385, 100)  # H1 timeframe
+    
+    if df.empty:
+        print(f"❌ No OHLCV data for {symbol}. Market may be closed or symbol not enabled.")
+        return {"raw_data": "", "error_flag": True, "error_message": f"No OHLCV data for {symbol}."}
+    
+    # 현재가 조회
+    current_price = get_current_price(symbol)
+    
+    recent_data = df.tail(10).to_json(orient='records')
+    raw_data = f"Account Info: {json.dumps(account_info)}\n"
+    raw_data += f"Current Price: {json.dumps(current_price)}\n"
+    raw_data += f"Recent Market Data (H1, last 10 candles): {recent_data}"
         
-    return {"raw_data": raw_data}
+    return {"raw_data": raw_data, "account_info": account_info, "error_flag": False}
 
 def tech_analyst_node(state: AgentState) -> Dict[str, Any]:
     """Node 2: Tech Analyst analyzes raw data and outputs a summary."""
@@ -151,15 +173,25 @@ def chief_trader_node(state: AgentState) -> Dict[str, Any]:
     structured_llm = llm.with_structured_output(FinalOrder)
     
     system_prompt = _read_prompt("chief_trader")
-    human_content = f"Here is the Strategy Hypothesis:\n{getattr(state, 'strategy_hypothesis', {})}"
+    
+    # 전략 가설 + 계좌 정보를 함께 전달
+    account_info = getattr(state, 'account_info', {})
+    human_content = f"Here is the Strategy Hypothesis:\n{getattr(state, 'strategy_hypothesis', {})}\n\n"
+    human_content += f"Account Info: {json.dumps(account_info)}"
     messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_content)]
     
     try:
         response = _invoke_llm_with_retry(structured_llm, messages)
+        
+        # 실시간 가격 조회
+        symbol = getattr(state, "symbol", "EURUSD")
+        current_price = get_current_price(symbol)
+        entry_price = current_price.get("ask", 0.0) if response.action.upper() == "BUY" else current_price.get("bid", 0.0)
+        
         final_order_dict = {
             "action": response.action,
-            "symbol": getattr(state, "symbol", "EURUSD"),
-            "entry_price": 1.055, # placeholder
+            "symbol": symbol,
+            "entry_price": entry_price,
             "sl_price": response.sl,
             "tp_price": response.tp,
             "lot_size": 0.0,
@@ -189,7 +221,11 @@ def execute_order_node(state: AgentState) -> Dict[str, Any]:
     account_info = get_account_summary()
     balance = account_info.get("balance", 10000.0)
     
-    entry_price = 1.0 # placeholder
+    # 실시간 가격 조회
+    current_price = get_current_price(symbol)
+    entry_price = current_price.get("ask", 0.0) if action.upper() == "BUY" else current_price.get("bid", 0.0)
+    if entry_price <= 0:
+        return {"order_result": {"status": "rejected", "reason": "Could not get current price"}}
     lot_size = enforce_one_percent_rule(balance, entry_price, sl)
     
     if lot_size <= 0:

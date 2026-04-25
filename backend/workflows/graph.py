@@ -9,10 +9,22 @@ from backend.workflows.nodes import (
     risk_reviewer_node
 )
 
+def fetch_data_router(state: AgentState) -> str:
+    """fetch_data 노드 후, 에러가 있으면 즉시 종료."""
+    if getattr(state, "error_flag", False):
+        error_msg = getattr(state, "error_message", "Unknown error")
+        print(f"🛑 Workflow aborted after fetch_data: {error_msg}")
+        return END
+    return "tech_analyst"
+
 def tech_analyst_router(state: AgentState) -> str:
+    """Tech Analyst 결과에 따른 라우팅. trade_worthy=False면 즉시 종료."""
+    if getattr(state, "error_flag", False):
+        print("🛑 Workflow aborted: LLM error in tech_analyst.")
+        return END
     tech_summary = getattr(state, "tech_summary", {})
     if not tech_summary.get("trade_worthy", True):
-        print("Market is choppy. Short-circuiting workflow.")
+        print("📊 Market is choppy. Short-circuiting workflow.")
         return END
     return "strategist"
 
@@ -34,8 +46,15 @@ def create_workflow() -> StateGraph:
     
     # Define edges (sequence of execution)
     workflow.add_edge(START, "fetch_data")
-    workflow.add_edge("fetch_data", "tech_analyst")
     
+    # fetch_data 후 에러 체크 (시장 휴장, MT5 미연결 등)
+    workflow.add_conditional_edges(
+        "fetch_data",
+        fetch_data_router,
+        {"tech_analyst": "tech_analyst", END: END}
+    )
+    
+    # tech_analyst 후 trade_worthy 체크
     workflow.add_conditional_edges(
         "tech_analyst",
         tech_analyst_router,
@@ -55,4 +74,3 @@ def get_compiled_graph():
     """
     workflow = create_workflow()
     return workflow.compile()
-

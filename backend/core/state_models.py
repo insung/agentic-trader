@@ -42,6 +42,7 @@ class AgentStateSchema(BaseModel):
     symbol: str = ""
     timeframe: str = ""
     error_flag: bool = False
+    error_message: str = ""
     
     # Node 1: Fetch Data
     raw_data: str = ""

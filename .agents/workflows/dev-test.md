@@ -1,3 +1,6 @@
+---
+description: 코드 수정 후 패키지 설치 및 pytest 기반 전체 파이프라인 검증 워크플로우
+---
 # Agentic Trader: Development & Test Workflow (/dev-test)
 
 이 워크플로우는 코드를 수정하거나 새로운 기능을 추가한 후, 전체 파이프라인이 정상적으로 동작하는지 검증하기 위한 CI/CD 자동화 지침서입니다.

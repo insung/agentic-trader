@@ -40,7 +40,7 @@ class AgentStateSchema(BaseModel):
     """
     # Meta Context
     symbol: str = ""
-    timeframe: str = ""
+    timeframe: str = "M5"
     error_flag: bool = False
     error_message: str = ""
     

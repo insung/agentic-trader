@@ -28,10 +28,10 @@ run-wine:
 
 # 수동 트리거 (종목 선택 가능)
 trigger:
-	@echo "Triggering a manual trade for $(SYMBOL)..."
+	@echo "Triggering a manual trade for $(SYMBOL) on $(TIMEFRAME)..."
 	curl -s -X POST "http://127.0.0.1:$(PORT)/api/v1/trade/trigger" \
 		-H "Content-Type: application/json" \
-		-d '{"symbol": "$(SYMBOL)", "mode": "paper"}' | python3 -m json.tool
+		-d '{"symbol": "$(SYMBOL)", "timeframe": "$(TIMEFRAME)", "mode": "paper"}' | python3 -m json.tool
 
 # 대화형 CLI 실행
 cli:
@@ -43,7 +43,7 @@ install: venv
 	$(VENV_BIN)/pip install -r requirements.txt
 
 # --- Backtesting Commands ---
-TIMEFRAME ?= H1
+TIMEFRAME ?= M5
 DAYS ?= 30
 FROM ?=
 TO ?=
@@ -62,7 +62,7 @@ backtest-fetch:
 # 예: make backtest-run DATA=backtests/data/EURUSD_H1_30d_20260425.csv
 backtest-run: venv
 	@echo "Running agentic backtest using data: $(DATA)..."
-	$(VENV_BIN)/python -m backend.scripts.run_backtest --data $(DATA) --symbol $(SYMBOL) --report
+	$(VENV_BIN)/python -m backend.scripts.run_backtest --data $(DATA) --symbol $(SYMBOL) --timeframe $(TIMEFRAME) --report
 
 # 백테스트 데이터 및 결과 정리
 backtest-clean:

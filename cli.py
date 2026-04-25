@@ -111,10 +111,43 @@ def select_symbol(base_url: str) -> str:
         print("  ⚠️ 잘못된 입력입니다. 다시 선택하세요.")
 
 
+def select_timeframe() -> str:
+    """타임프레임 선택 메뉴를 표시합니다."""
+    print("─" * 40)
+    print("⏳ Step 2: 타임프레임 선택")
+    print("─" * 40)
+    print("  [1] M5 (5분봉) ← 추천")
+    print("  [2] M15 (15분봉)")
+    print("  [3] H1 (1시간봉)")
+    print("  [4] H4 (4시간봉)")
+    print("  [5] D1 (일봉)")
+    print()
+    
+    tf_map = {"1": "M5", "2": "M15", "3": "H1", "4": "H4", "5": "D1"}
+    
+    while True:
+        choice = input("  선택 (번호 입력, 기본=1): ").strip()
+        if choice == "" or choice == "1":
+            print("  ✅ 타임프레임: M5")
+            print()
+            return "M5"
+        elif choice in tf_map:
+            print(f"  ✅ 타임프레임: {tf_map[choice]}")
+            print()
+            return tf_map[choice]
+        # 직접 입력 처리
+        upper = choice.upper()
+        if upper in ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1"]:
+            print(f"  ✅ 타임프레임: {upper}")
+            print()
+            return upper
+        print("  ⚠️ 잘못된 입력입니다. 다시 선택하세요.")
+
+
 def select_strategy(base_url: str) -> str:
     """전략 선택 메뉴를 표시합니다. 'auto'면 시장 상태 기반 자동 선택."""
     print("─" * 40)
-    print("📈 Step 2: 전략 선택")
+    print("📈 Step 3: 전략 선택")
     print("─" * 40)
     
     strategies = api_get(base_url, "/api/v1/strategies")
@@ -147,7 +180,7 @@ def select_strategy(base_url: str) -> str:
 def select_mode() -> str:
     """실행 모드 선택."""
     print("─" * 40)
-    print("🔒 Step 3: 실행 모드")
+    print("🔒 Step 4: 실행 모드")
     print("─" * 40)
     print("  [1] 📄 Paper Trading (모의 매매) ← 추천")
     print("  [2] 💰 Live Trading (실전 - Demo Account)")
@@ -173,7 +206,7 @@ def select_mode() -> str:
         print("  ⚠️ 잘못된 입력입니다. 1 또는 2를 입력하세요.")
 
 
-def confirm_and_execute(base_url: str, symbol: str, strategy: str, mode: str):
+def confirm_and_execute(base_url: str, symbol: str, strategy: str, mode: str, timeframe: str):
     """최종 확인 후 트리거합니다."""
     strategy_display = strategy if strategy else "Auto (Market Regime)"
     mode_display = "📄 Paper" if mode == "paper" else "💰 Live"
@@ -182,6 +215,7 @@ def confirm_and_execute(base_url: str, symbol: str, strategy: str, mode: str):
     print("   📋 실행 요약")
     print("=" * 40)
     print(f"  종목:   {symbol}")
+    print(f"  시간:   {timeframe}")
     print(f"  전략:   {strategy_display}")
     print(f"  모드:   {mode_display}")
     print("=" * 40)
@@ -197,6 +231,7 @@ def confirm_and_execute(base_url: str, symbol: str, strategy: str, mode: str):
     
     payload = {
         "symbol": symbol,
+        "timeframe": timeframe,
         "mode": mode,
     }
     if strategy:
@@ -205,7 +240,7 @@ def confirm_and_execute(base_url: str, symbol: str, strategy: str, mode: str):
     result = api_post(base_url, "/api/v1/trade/trigger", payload)
     if result:
         print(f"  ✅ {result.get('message', 'Triggered')}")
-        print(f"  📌 종목: {result.get('symbol')}, 모드: {result.get('mode')}")
+        print(f"  📌 종목: {result.get('symbol')}, 시간: {timeframe}, 모드: {result.get('mode')}")
         print()
         print("  💡 서버 로그에서 파이프라인 실행 상태를 확인하세요.")
         print("     (서버 터미널에서 실시간 로그가 출력됩니다)")
@@ -233,6 +268,9 @@ def main():
     # 2. 종목 선택
     symbol = select_symbol(base_url)
     
+    # 2-5. 타임프레임 선택
+    timeframe = select_timeframe()
+    
     # 3. 전략 선택
     strategy = select_strategy(base_url)
     
@@ -240,7 +278,7 @@ def main():
     mode = select_mode()
     
     # 5. 확인 및 실행
-    confirm_and_execute(base_url, symbol, strategy, mode)
+    confirm_and_execute(base_url, symbol, strategy, mode, timeframe)
 
 
 if __name__ == "__main__":

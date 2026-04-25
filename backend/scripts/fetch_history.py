@@ -10,7 +10,8 @@ CSV 파일로 저장합니다.
 import argparse
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from typing import Optional, List
 
 import pandas as pd
 
@@ -20,17 +21,7 @@ try:
 except ImportError:
     mt5 = None
 
-# 타임프레임 매핑 (사람이 읽기 쉬운 문자열 → MT5 상수)
-TIMEFRAME_MAP = {
-    "M1": 1,
-    "M5": 5,
-    "M15": 15,
-    "M30": 30,
-    "H1": 16385,
-    "H4": 16388,
-    "D1": 16408,
-    "W1": 32769,
-}
+from backend.features.trading.mt5_adapter import TIMEFRAME_MAP
 
 # 기본 저장 경로
 DEFAULT_OUTPUT_DIR = os.path.join(
@@ -68,17 +59,17 @@ def fetch_and_save(
         print("❌ MT5 연결 실패.")
         sys.exit(1)
 
-    # 기간 계산 로직
+    # 기간 계산 로직 (UTC timezone 적용)
     if from_date:
-        utc_from = datetime.strptime(from_date, "%Y-%m-%d")
+        utc_from = datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
         if to_date:
-            utc_to = datetime.strptime(to_date, "%Y-%m-%d")
+            utc_to = datetime.strptime(to_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
         else:
-            utc_to = datetime.utcnow()
+            utc_to = datetime.now(timezone.utc)
     else:
         # days 기반 (기본값)
         num_days = days if days is not None else 30
-        utc_to = datetime.utcnow()
+        utc_to = datetime.now(timezone.utc)
         utc_from = utc_to - timedelta(days=num_days)
 
     print(f"📊 데이터 조회 중: {symbol} {timeframe_str} ({utc_from.strftime('%Y-%m-%d')} ~ {utc_to.strftime('%Y-%m-%d')})")
@@ -93,6 +84,11 @@ def fetch_and_save(
 
     df = pd.DataFrame(rates)
     df["time"] = pd.to_datetime(df["time"], unit="s")
+    
+    if len(df) < 10:
+        print(f"⚠️ [WARNING] 조회된 데이터가 {len(df)}개뿐입니다.")
+        print(f"   브로커 서버에 해당 과거 데이터({timeframe_str})가 다운로드되어 있지 않을 수 있습니다.")
+        print(f"   터미널에서 수동으로 스크롤하여 데이터를 로드하거나 다른 날짜/타임프레임을 시도하세요.")
 
     # 저장
     os.makedirs(output_dir, exist_ok=True)

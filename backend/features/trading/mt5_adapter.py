@@ -22,6 +22,18 @@ SUPPORTED_SYMBOLS = [
 ]
 
 
+# 타임프레임 매핑 (사람이 읽기 쉬운 문자열 → MT5 상수)
+TIMEFRAME_MAP = {
+    "M1": 1, "1": 1,
+    "M5": 5, "5": 5,
+    "M15": 15, "15": 15,
+    "M30": 30, "30": 30,
+    "H1": 16385, "60": 16385,
+    "H4": 16388, "240": 16388,
+    "D1": 16408, "1440": 16408,
+    "W1": 32769,
+}
+
 def is_mt5_available() -> bool:
     """MT5 라이브러리가 로드되어 사용 가능한지 확인합니다."""
     return mt5 is not None
@@ -79,13 +91,18 @@ def get_account_summary() -> dict:
         return {}
     return account_info._asdict()
 
-def fetch_ohlcv(symbol: str, timeframe: int, count: int = 100) -> pd.DataFrame:
+def fetch_ohlcv(symbol: str, timeframe_str: str, count: int = 100) -> pd.DataFrame:
     """
     특정 심볼의 과거 캔들(OHLCV) 데이터를 조회하여 DataFrame으로 반환합니다.
     이 데이터는 향후 pandas-ta 지표 계산에 사용됩니다.
     """
     if mt5 is None:
         print(f"❌ MT5 not available. Cannot fetch OHLCV for {symbol}.")
+        return pd.DataFrame()
+    
+    tf = TIMEFRAME_MAP.get(timeframe_str.upper())
+    if tf is None:
+        print(f"❌ 지원하지 않는 타임프레임: {timeframe_str}")
         return pd.DataFrame()
     
     # 심볼이 마켓워치에 활성화되어 있는지 확인
@@ -99,7 +116,7 @@ def fetch_ohlcv(symbol: str, timeframe: int, count: int = 100) -> pd.DataFrame:
             print(f"❌ Failed to enable {symbol} in Market Watch.")
             return pd.DataFrame()
         
-    rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
+    rates = mt5.copy_rates_from_pos(symbol, tf, 0, count)
     if rates is None:
         error = mt5.last_error()
         print(f"❌ Failed to fetch rates for {symbol}. Error: {error}")

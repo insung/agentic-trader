@@ -107,7 +107,7 @@ def test_end_to_end_trading_pipeline(
     # 5. Assertions
     # Check that MT5 functions were called
     mock_get_account.assert_called()
-    mock_fetch_ohlcv.assert_called_with("EURUSD", 16385, 100)
+    mock_fetch_ohlcv.assert_called_with("EURUSD", "M5", 100)
     
     # Verify final state
     assert "raw_data" in final_state

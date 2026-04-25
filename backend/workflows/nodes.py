@@ -94,6 +94,7 @@ def fetch_data_node(state: AgentState) -> Dict[str, Any]:
     """Node 1: Fetch OHLCV Data and calculate indicators."""
     print("[Node 1] fetch_data_node executed")
     symbol = getattr(state, "symbol", "EURUSD")
+    timeframe_str = getattr(state, "timeframe", "H1")
     
     # 시장 휴장 체크
     if not is_market_open():
@@ -111,7 +112,7 @@ def fetch_data_node(state: AgentState) -> Dict[str, Any]:
         print("❌ Failed to get account info from MT5.")
         return {"raw_data": "", "error_flag": True, "error_message": "MT5 account info unavailable."}
     
-    df = fetch_ohlcv(symbol, 16385, 100)  # H1 timeframe
+    df = fetch_ohlcv(symbol, timeframe_str, 100)
     
     if df.empty:
         print(f"❌ No OHLCV data for {symbol}. Market may be closed or symbol not enabled.")
@@ -123,7 +124,7 @@ def fetch_data_node(state: AgentState) -> Dict[str, Any]:
     recent_data = df.tail(10).to_json(orient='records')
     raw_data = f"Account Info: {json.dumps(account_info)}\n"
     raw_data += f"Current Price: {json.dumps(current_price)}\n"
-    raw_data += f"Recent Market Data (H1, last 10 candles): {recent_data}"
+    raw_data += f"Recent Market Data ({timeframe_str}, last 10 candles): {recent_data}"
         
     return {"raw_data": raw_data, "account_info": account_info, "error_flag": False}
 
@@ -208,11 +209,11 @@ def execute_order_node(state: AgentState) -> Dict[str, Any]:
     final_order = getattr(state, "final_order", None)
     
     if not final_order:
-        return {"order_result": {"status": "skipped", "reason": "No final_order"}}
+        return {"order_result": {"success": False, "error_message": "No final_order", "timestamp": datetime.now().isoformat()}}
         
     action = final_order.action.value if hasattr(final_order.action, 'value') else final_order.action
     if action.upper() not in ["BUY", "SELL"]:
-        return {"order_result": {"status": "skipped", "reason": f"Action was {action}"}}
+        return {"order_result": {"success": False, "error_message": f"Action was {action}", "timestamp": datetime.now().isoformat()}}
         
     symbol = getattr(state, "symbol", "EURUSD")
     sl = final_order.sl_price
@@ -225,11 +226,11 @@ def execute_order_node(state: AgentState) -> Dict[str, Any]:
     current_price = get_current_price(symbol)
     entry_price = current_price.get("ask", 0.0) if action.upper() == "BUY" else current_price.get("bid", 0.0)
     if entry_price <= 0:
-        return {"order_result": {"status": "rejected", "reason": "Could not get current price"}}
+        return {"order_result": {"success": False, "error_message": "Could not get current price", "timestamp": datetime.now().isoformat()}}
     lot_size = enforce_one_percent_rule(balance, entry_price, sl)
     
     if lot_size <= 0:
-         return {"order_result": {"status": "rejected", "reason": "Guardrail: lot size calculated to <= 0"}}
+         return {"order_result": {"success": False, "error_message": "Guardrail: lot size calculated to <= 0", "timestamp": datetime.now().isoformat()}}
          
     result = execute_mock_order(symbol, action, lot_size, sl, tp, entry_price)
     order_result_dict = {

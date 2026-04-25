@@ -38,11 +38,13 @@ class BacktestEngine:
         self,
         data_path: str,
         symbol: str = "EURUSD",
+        timeframe: str = "M5",
         initial_balance: float = DEFAULT_INITIAL_BALANCE,
         step_interval: int = STEP_INTERVAL,
     ):
         self.data_path = data_path
         self.symbol = symbol
+        self.timeframe = timeframe
         self.initial_balance = initial_balance
         self.balance = initial_balance
         self.step_interval = step_interval
@@ -180,7 +182,7 @@ class BacktestEngine:
                  }):
 
                 try:
-                    initial_state = {"symbol": self.symbol, "timeframe": "H1"}
+                    initial_state = {"symbol": self.symbol, "timeframe": self.timeframe}
                     final_state = {}
 
                     for s in graph.stream(initial_state):
@@ -259,6 +261,7 @@ def main():
     parser = argparse.ArgumentParser(description="Agentic Backtest Runner")
     parser.add_argument("--data", type=str, required=True, help="과거 데이터 CSV 파일 경로")
     parser.add_argument("--symbol", type=str, default="EURUSD", help="종목 코드 (기본: EURUSD)")
+    parser.add_argument("--timeframe", type=str, default="M5", help="타임프레임 (기본: M5)")
     parser.add_argument("--balance", type=float, default=DEFAULT_INITIAL_BALANCE, help="초기 잔고 (기본: 10000)")
     parser.add_argument("--step", type=int, default=STEP_INTERVAL, help="파이프라인 호출 간격 (캔들 수, 기본: 5)")
     parser.add_argument("--report", action="store_true", help="백테스트 완료 후 리포트 자동 생성")
@@ -271,6 +274,7 @@ def main():
     engine = BacktestEngine(
         data_path=args.data,
         symbol=args.symbol,
+        timeframe=args.timeframe,
         initial_balance=args.balance,
         step_interval=args.step,
     )

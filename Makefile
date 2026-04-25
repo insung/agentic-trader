@@ -43,11 +43,20 @@ install: venv
 	$(VENV_BIN)/pip install -r requirements.txt
 
 # --- Backtesting Commands ---
+TIMEFRAME ?= H1
+DAYS ?= 30
+FROM ?=
+TO ?=
 
-# 과거 데이터 수집 (예: make backtest-fetch SYMBOL=EURUSD DAYS=30)
+# 과거 데이터 수집 (예: make backtest-fetch SYMBOL=EURUSD FROM=2023-01-01 TO=2023-01-31)
 backtest-fetch:
 	@echo "Fetching historical data for $(SYMBOL)..."
-	WINEPREFIX=$(WINEPREFIX) PYTHONPATH=. wine python -m backend.scripts.fetch_history --symbol $(SYMBOL) --days $(DAYS) --timeframe H1
+	WINEPREFIX=$(WINEPREFIX) PYTHONPATH=. wine python -m backend.scripts.fetch_history \
+		--symbol $(SYMBOL) \
+		--timeframe $(TIMEFRAME) \
+		--days $(DAYS) \
+		--from "$(FROM)" \
+		--to "$(TO)"
 
 # 백테스트 실행 (DATA 변수에 CSV 경로 지정 필수)
 # 예: make backtest-run DATA=backtests/data/EURUSD_H1_30d_20260425.csv

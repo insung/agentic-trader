@@ -41,3 +41,23 @@ cli:
 install: venv
 	@echo "Installing dependencies..."
 	$(VENV_BIN)/pip install -r requirements.txt
+
+# --- Backtesting Commands ---
+
+# 과거 데이터 수집 (예: make backtest-fetch SYMBOL=EURUSD DAYS=30)
+backtest-fetch:
+	@echo "Fetching historical data for $(SYMBOL)..."
+	WINEPREFIX=$(WINEPREFIX) PYTHONPATH=. wine python -m backend.scripts.fetch_history --symbol $(SYMBOL) --days $(DAYS) --timeframe H1
+
+# 백테스트 실행 (DATA 변수에 CSV 경로 지정 필수)
+# 예: make backtest-run DATA=backtests/data/EURUSD_H1_30d_20260425.csv
+backtest-run: venv
+	@echo "Running agentic backtest using data: $(DATA)..."
+	$(VENV_BIN)/python -m backend.scripts.run_backtest --data $(DATA) --symbol $(SYMBOL) --report
+
+# 백테스트 데이터 및 결과 정리
+backtest-clean:
+	@echo "Cleaning backtest data and results..."
+	rm -rf backtests/data/*.csv
+	rm -rf backtests/results/*.json
+	rm -rf docs/trading_logs/backtest_results/*

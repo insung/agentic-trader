@@ -62,6 +62,33 @@ sequenceDiagram
     deactivate FastAPI
 ```
 
+---
+
+## 백테스팅 실행 플로우 (Backtesting Flow)
+
+백테스팅은 실제 운영 환경과 동일한 `LangGraph Engine`을 사용하되, 하단 인프라 레이어(MT5)를 모킹하여 실행됩니다.
+
+```mermaid
+sequenceDiagram
+    participant Runner as Backtest Runner (Python)
+    participant CSV as History Data (CSV)
+    participant Graph as LangGraph Engine
+    participant Mocker as MT5 Adapter Mocker
+    participant Report as Reporting Module
+
+    Runner->>CSV: Load Historical Candles
+    loop For each candle interval
+        Runner->>Mocker: Inject Current Window Data
+        Runner->>Graph: app.invoke(mocked_state)
+        Graph->>Graph: Agentic Analysis (Flash Model)
+        Graph-->>Runner: Return Decision (BUY/SELL/WAIT)
+        Runner->>Runner: Simulate Exit (SL/TP check)
+        Runner->>Runner: Record PnL & Equity
+    end
+    Runner->>Report: Generate Statistics & Chart
+    Report-->>Runner: Save Markdown + PNG
+```
+
 ## 플로우 핵심 요약
 1. **Dispatcher:** 스케줄러나 웹훅이 FastAPI의 엔드포인트를 때리면 전체 루프가 시작됩니다.
 2. **Fault-Tolerant Graph:** 각 LLM 노드는 API 실패 시 자동 재시도하며, 필터 라우팅을 통해 횡보장에서 조기 종료합니다.

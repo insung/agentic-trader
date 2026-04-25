@@ -8,6 +8,7 @@ AI(LLM)를 두뇌로 활용하여 해외선물 및 주식을 자율적으로 거
 *   **Backend-First Architecture (FastAPI):** 외부 금융 API(MT5) 연동, 보조지표 연산(pandas-ta), 계좌 정보 주입 및 하드코딩된 절대 안전 규칙(Guardrails)은 모두 파이썬 백엔드가 담당하며, AI는 정제된 데이터를 받아 '판단'만 내립니다.
 *   **Multi-Agent Reflexion Loop:** 단일 프롬프트가 아닌, 기술 분석가 -> 전략가 -> 트레이더 -> 복기 서기 로 이어지는 다중 페르소나 협업 구조를 통해 사람과 같은 입체적인 매매를 지향합니다.
 *   **Knowledge-Based Reasoning:** `docs/trading-strategies/`에 저장된 전문 전략 지식 베이스를 동적으로 주입하여 전략적 일관성을 유지합니다.
+*   **Agentic Backtesting:** 실제 에이전트 파이프라인을 그대로 사용하여 과거 데이터 위에서 시뮬레이션하고, 상세한 통계와 타점이 표시된 차트 리포트를 생성합니다.
 
 ## Quick Start (개발 및 테스트)
 
@@ -25,7 +26,12 @@ AI(LLM)를 두뇌로 활용하여 해외선물 및 주식을 자율적으로 거
     ```bash
     make run
     ```
-4.  **수동으로 AI 매매 파이프라인 1사이클 트리거 (서버 구동 중):**
+4.  **백테스팅 실행 (과거 데이터 기반 전략 검증):**
+    ```bash
+    make backtest-fetch SYMBOL=EURUSD DAYS=30
+    make backtest-run DATA=backtests/data/EURUSD_H1_30d_XXXXXXXX.csv
+    ```
+5.  **수동으로 AI 매매 파이프라인 1사이클 트리거 (서버 구동 중):**
     ```bash
     make trigger
     ```

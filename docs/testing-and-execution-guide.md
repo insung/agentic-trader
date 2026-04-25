@@ -56,19 +56,31 @@ curl -X POST http://localhost:8000/api/v1/trade/trigger \
 
 ---
 
-## 🛡️ 모의 투자(Paper Trading)와 실전 주문 전환
-현재 시스템은 안전을 위해 기본적으로 **모의 주문(`execute_mock_order`)**을 실행하도록 설정되어 있습니다.
+---
 
-### 실제 계좌에 주문을 넣으려면:
-`backend/main.py` 파일의 `run_trading_workflow` 함수 하단에서 주문 실행 부분을 다음과 같이 수정하십시오.
+## 🚀 5단계: 백테스팅 (Agentic Backtesting)
 
-*   **가상 주문 (기본값):**
-    ```python
-    execute_mock_order(symbol, action, safe_lot_size, sl, tp, entry_price)
-    ```
-*   **실제 주문 전송:**
-    ```python
-    send_market_order(symbol, action, safe_lot_size, sl, tp)
-    ```
+과거 데이터를 사용하여 전략의 수익성을 시뮬레이션하고 상세 리포트를 생성합니다.
+
+### 5-1. 과거 데이터 수집
+MT5 터미널이 실행 중인 상태에서 Wine Python을 통해 데이터를 수집합니다.
+```bash
+make backtest-fetch SYMBOL=EURUSD DAYS=30
+```
+- 데이터는 `backtests/data/` 디렉토리에 저장됩니다.
+
+### 5-2. 백테스트 실행 및 리포트 생성
+수집된 CSV 파일을 지정하여 백테스트를 실행합니다.
+```bash
+make backtest-run DATA=backtests/data/EURUSD_H1_30d_XXXXXXXX.csv
+```
+- `--report` 옵션이 기본 포함되어 있어 완료 후 자동으로 차트와 리포트가 생성됩니다.
+
+### 5-3. 결과 확인
+생성된 리포트는 다음 경로에서 확인할 수 있습니다.
+- **마크다운 리포트**: `docs/trading_logs/backtest_results/backtest_EURUSD_YYYYMMDD.md`
+- **시각화 차트**: 리포트와 동일한 폴더 내의 `.png` 파일
+
+---
 
 > **주의:** 실제 주문 전송 시 반드시 데모 계좌(Demo Account)에서 먼저 충분히 테스트하십시오.

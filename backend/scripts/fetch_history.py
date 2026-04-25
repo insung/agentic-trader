@@ -105,21 +105,23 @@ def fetch_and_save(
 def main():
     parser = argparse.ArgumentParser(description="MT5 과거 데이터 수집 스크립트")
     parser.add_argument("--symbol", type=str, default="EURUSD", help="종목 코드 (기본: EURUSD)")
-    parser.add_argument("--timeframe", type=str, default="H1", help="타임프레임 (기본: H1)")
+    parser.add_argument("--timeframes", type=str, default="M5", help="콤마로 구분된 타임프레임 (예: M5,H1)")
     parser.add_argument("--days", type=int, help="과거 조회 일수 (from/to가 없을 때 사용)")
     parser.add_argument("--from", dest="from_date", type=str, help="시작일 (YYYY-MM-DD)")
     parser.add_argument("--to", dest="to_date", type=str, help="종료일 (YYYY-MM-DD)")
     parser.add_argument("--output-dir", type=str, default=DEFAULT_OUTPUT_DIR, help="저장 디렉토리")
     args = parser.parse_args()
 
-    fetch_and_save(
-        args.symbol, 
-        args.timeframe, 
-        args.days, 
-        args.from_date, 
-        args.to_date, 
-        args.output_dir
-    )
+    timeframes = [tf.strip() for tf in args.timeframes.split(",")]
+    for tf in timeframes:
+        fetch_and_save(
+            args.symbol, 
+            tf, 
+            args.days, 
+            args.from_date, 
+            args.to_date, 
+            args.output_dir
+        )
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ class HealthResponse(BaseModel):
 
 class TriggerRequest(BaseModel):
     symbol: str = "EURUSD"
-    timeframe: str = "M5"
+    timeframes: List[str] = ["M5"]
     strategy_override: Optional[str] = None
     mode: str = "paper"  # "paper" or "live"
 
@@ -125,15 +125,17 @@ from backend.features.trading.mt5_adapter import MT5Client, execute_mock_order, 
 from backend.core.state_models import Order, OrderAction
 from backend.features.trading.market_hours import is_market_open, get_market_status_message
 
-def run_trading_workflow(symbol: str, strategy_override: str = None, mode: str = "paper", timeframe: str = "M5"):
+def run_trading_workflow(symbol: str, strategy_override: str = None, mode: str = "paper", timeframes: List[str] = None):
     """
     백그라운드에서 실행될 트레이딩 워크플로우 함수
     """
     try:
-        print(f"🚀 Starting trading workflow for {symbol} (mode: {mode}, timeframe: {timeframe})")
+        if timeframes is None:
+            timeframes = ["M5"]
+        print(f"🚀 Starting trading workflow for {symbol} (mode: {mode}, timeframes: {timeframes})")
         
         graph = get_compiled_graph()
-        initial_state = {"symbol": symbol, "timeframe": timeframe}
+        initial_state = {"symbol": symbol, "timeframes": timeframes}
         
         final_state = initial_state.copy()
         
@@ -209,7 +211,7 @@ async def trigger_trading_workflow(request: TriggerRequest, background_tasks: Ba
         request.symbol, 
         request.strategy_override, 
         request.mode,
-        request.timeframe
+        request.timeframes
     )
     
     return TriggerResponse(

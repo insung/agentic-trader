@@ -56,7 +56,10 @@ def _read_prompt(agent_name: str) -> str:
     except FileNotFoundError:
         return f"System prompt for {agent_name} not found."
 
-def _read_strategies(market_regime: str = "Ranging") -> str:
+def _read_strategies(market_regime: str = "Ranging", current_timeframes: List[str] = None) -> str:
+    if current_timeframes is None:
+        current_timeframes = ["M5"]
+        
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     strategies_dir = os.path.join(base_dir, "docs", "trading-strategies")
     config_path = os.path.join(base_dir, "backend", "config", "strategies_config.json")
@@ -67,7 +70,11 @@ def _read_strategies(market_regime: str = "Ranging") -> str:
             config = json.load(f)
         
         for strat in config.get("strategies", []):
-            if market_regime in strat.get("allowed_regimes", []):
+            regime_match = market_regime in strat.get("allowed_regimes", [])
+            req_tfs = strat.get("required_timeframes", current_timeframes) # Default to matching if not specified
+            tf_match = set(req_tfs).issubset(set(current_timeframes))
+            
+            if regime_match and tf_match:
                 filename = strat.get("file")
                 filepath = os.path.join(strategies_dir, filename)
                 if os.path.exists(filepath):
@@ -94,7 +101,7 @@ def fetch_data_node(state: AgentState) -> Dict[str, Any]:
     """Node 1: Fetch OHLCV Data and calculate indicators."""
     print("[Node 1] fetch_data_node executed")
     symbol = getattr(state, "symbol", "EURUSD")
-    timeframe_str = getattr(state, "timeframe", "H1")
+    timeframes = getattr(state, "timeframes", ["M5"])
     
     # 시장 휴장 체크
     if not is_market_open():
@@ -112,19 +119,19 @@ def fetch_data_node(state: AgentState) -> Dict[str, Any]:
         print("❌ Failed to get account info from MT5.")
         return {"raw_data": "", "error_flag": True, "error_message": "MT5 account info unavailable."}
     
-    df = fetch_ohlcv(symbol, timeframe_str, 100)
-    
-    if df.empty:
-        print(f"❌ No OHLCV data for {symbol}. Market may be closed or symbol not enabled.")
-        return {"raw_data": "", "error_flag": True, "error_message": f"No OHLCV data for {symbol}."}
-    
     # 현재가 조회
     current_price = get_current_price(symbol)
     
-    recent_data = df.tail(10).to_json(orient='records')
     raw_data = f"Account Info: {json.dumps(account_info)}\n"
     raw_data += f"Current Price: {json.dumps(current_price)}\n"
-    raw_data += f"Recent Market Data ({timeframe_str}, last 10 candles): {recent_data}"
+    
+    for tf in timeframes:
+        df = fetch_ohlcv(symbol, tf, 100)
+        if df.empty:
+            print(f"❌ No OHLCV data for {symbol} on {tf}.")
+            continue
+        recent_data = df.tail(10).to_json(orient='records')
+        raw_data += f"\n[{tf} Timeframe Market Data (last 10 candles)]:\n{recent_data}\n"
         
     return {"raw_data": raw_data, "account_info": account_info, "error_flag": False}
 
@@ -154,7 +161,8 @@ def strategist_node(state: AgentState) -> Dict[str, Any]:
     system_prompt = _read_prompt("strategist")
     tech_summary_data = getattr(state, 'tech_summary', {})
     market_regime = tech_summary_data.get('market_regime', 'Ranging')
-    strategies_kb = _read_strategies(market_regime)
+    timeframes = getattr(state, "timeframes", ["M5"])
+    strategies_kb = _read_strategies(market_regime, timeframes)
     
     human_content = f"Here is the Tech Summary:\n{getattr(state, 'tech_summary', {})}\n\n"
     human_content += f"Available Trading Strategies (Knowledge Base):\n{strategies_kb}"

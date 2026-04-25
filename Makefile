@@ -28,10 +28,10 @@ run-wine:
 
 # 수동 트리거 (종목 선택 가능)
 trigger:
-	@echo "Triggering a manual trade for $(SYMBOL) on $(TIMEFRAME)..."
+	@echo "Triggering a manual trade for $(SYMBOL) on $(TIMEFRAMES)..."
 	curl -s -X POST "http://127.0.0.1:$(PORT)/api/v1/trade/trigger" \
 		-H "Content-Type: application/json" \
-		-d '{"symbol": "$(SYMBOL)", "timeframe": "$(TIMEFRAME)", "mode": "paper"}' | python3 -m json.tool
+		-d '{"symbol": "$(SYMBOL)", "timeframes": "$(TIMEFRAMES)", "mode": "paper"}' | python3 -m json.tool
 
 # 대화형 CLI 실행
 cli:
@@ -43,26 +43,26 @@ install: venv
 	$(VENV_BIN)/pip install -r requirements.txt
 
 # --- Backtesting Commands ---
-TIMEFRAME ?= M5
+TIMEFRAMES ?= M5,H1
 DAYS ?= 30
 FROM ?=
 TO ?=
 
 # 과거 데이터 수집 (예: make backtest-fetch SYMBOL=EURUSD FROM=2023-01-01 TO=2023-01-31)
 backtest-fetch:
-	@echo "Fetching historical data for $(SYMBOL)..."
+	@echo "Fetching historical data for $(SYMBOL) on $(TIMEFRAMES)..."
 	WINEPREFIX=$(WINEPREFIX) PYTHONPATH=. wine python -m backend.scripts.fetch_history \
 		--symbol $(SYMBOL) \
-		--timeframe $(TIMEFRAME) \
+		--timeframes $(TIMEFRAMES) \
 		--days $(DAYS) \
 		--from "$(FROM)" \
 		--to "$(TO)"
 
-# 백테스트 실행 (DATA 변수에 CSV 경로 지정 필수)
-# 예: make backtest-run DATA=backtests/data/EURUSD_H1_30d_20260425.csv
+# 백테스트 실행 (DATA 변수에 콤마로 구분된 여러 CSV 경로 지정 가능)
+# 예: make backtest-run DATA=backtests/data/EURUSD_M5_...csv,backtests/data/EURUSD_H1_...csv
 backtest-run: venv
 	@echo "Running agentic backtest using data: $(DATA)..."
-	$(VENV_BIN)/python -m backend.scripts.run_backtest --data $(DATA) --symbol $(SYMBOL) --timeframe $(TIMEFRAME) --report
+	$(VENV_BIN)/python -m backend.scripts.run_backtest --data $(DATA) --symbol $(SYMBOL) --timeframes $(TIMEFRAMES) --report
 
 # 백테스트 데이터 및 결과 정리
 backtest-clean:

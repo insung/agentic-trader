@@ -117,16 +117,16 @@ def select_timeframe() -> str:
     print("⏳ Step 2: 타임프레임 선택")
     print("─" * 40)
     print("  [1] M5 (5분봉) ← 추천")
+    print("  [1] M5 (5분봉) - 기본값")
     print("  [2] M15 (15분봉)")
     print("  [3] H1 (1시간봉)")
-    print("  [4] H4 (4시간봉)")
-    print("  [5] D1 (일봉)")
+    print("  [4] 다중 타임프레임 (예: M5,H1)")
     print()
     
-    tf_map = {"1": "M5", "2": "M15", "3": "H1", "4": "H4", "5": "D1"}
+    tf_map = {"1": "M5", "2": "M15", "3": "H1"}
     
     while True:
-        choice = input("  선택 (번호 입력, 기본=1): ").strip()
+        choice = input("  선택 (번호 또는 콤마구분 직접입력, 기본=1): ").strip()
         if choice == "" or choice == "1":
             print("  ✅ 타임프레임: M5")
             print()
@@ -135,12 +135,20 @@ def select_timeframe() -> str:
             print(f"  ✅ 타임프레임: {tf_map[choice]}")
             print()
             return tf_map[choice]
-        # 직접 입력 처리
-        upper = choice.upper()
-        if upper in ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1"]:
-            print(f"  ✅ 타임프레임: {upper}")
-            print()
-            return upper
+        else:
+            # 직접 콤마로 입력한 경우 유효성 검사 (간단히)
+            upper_tfs = [t.strip().upper() for t in choice.split(",") if t.strip()]
+            valid = True
+            for t in upper_tfs:
+                if t not in ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1"]:
+                    valid = False
+            
+            if valid and upper_tfs:
+                res = ",".join(upper_tfs)
+                print(f"  ✅ 타임프레임: {res}")
+                print()
+                return res
+            
         print("  ⚠️ 잘못된 입력입니다. 다시 선택하세요.")
 
 

@@ -4,12 +4,14 @@
       "name": "Bollinger Bands Reversion",
       "file": "bollinger_bands.md",
       "allowed_regimes": ["Ranging", "High Volatility"],
+      "required_timeframes": ["M5", "H1"],
       "description": "Mean reversion strategy for ranging markets or high volatility extremes."
     },
     {
       "name": "Moving Average Crossover",
       "file": "ma_crossover.md",
       "allowed_regimes": ["Bullish", "Bearish"],
+      "required_timeframes": ["M5"],
       "description": "Trend-following strategy for strong directional markets."
     }
   ]

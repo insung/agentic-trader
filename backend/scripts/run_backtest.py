@@ -36,22 +36,29 @@ class BacktestEngine:
 
     def __init__(
         self,
-        data_path: str,
+        data_paths: List[str],
         symbol: str = "EURUSD",
-        timeframe: str = "M5",
+        timeframes: List[str] = None,
         initial_balance: float = DEFAULT_INITIAL_BALANCE,
         step_interval: int = STEP_INTERVAL,
     ):
-        self.data_path = data_path
+        self.data_paths = data_paths
         self.symbol = symbol
-        self.timeframe = timeframe
+        self.timeframes = timeframes if timeframes else ["M5"]
         self.initial_balance = initial_balance
         self.balance = initial_balance
         self.step_interval = step_interval
 
         # 전체 과거 데이터 로드
-        self.df = pd.read_csv(data_path, parse_dates=["time"])
-        print(f"📂 데이터 로드 완료: {len(self.df)}개 캔들 ({self.df['time'].iloc[0]} ~ {self.df['time'].iloc[-1]})")
+        self.dfs = {}
+        for path, tf in zip(self.data_paths, self.timeframes):
+            df = pd.read_csv(path.strip(), parse_dates=["time"])
+            self.dfs[tf] = df
+            print(f"📂 데이터 로드 완료 ({tf}): {len(df)}개 캔들 ({df['time'].iloc[0]} ~ {df['time'].iloc[-1]})")
+            
+        # 가장 작은 타임프레임을 루프 기준으로 설정 (보통 리스트의 첫 번째 값)
+        self.base_tf = self.timeframes[0]
+        self.df_base = self.dfs[self.base_tf]
 
         # 결과 기록
         self.trades: List[Dict[str, Any]] = []
@@ -139,7 +146,7 @@ class BacktestEngine:
         과거 데이터를 step_interval 간격으로 슬라이싱하여
         각 시점에서 LangGraph 파이프라인을 호출합니다.
         """
-        total_candles = len(self.df)
+        total_candles = len(self.df_base)
         if total_candles < LOOKBACK_CANDLES + 1:
             print(f"❌ 데이터 부족: {total_candles}개 캔들 (최소 {LOOKBACK_CANDLES + 1}개 필요)")
             return []
@@ -159,19 +166,24 @@ class BacktestEngine:
         print("=" * 60)
 
         for step_num, i in enumerate(range(start_idx, total_candles - self.step_interval, self.step_interval), 1):
-            current_time = self.df.iloc[i]["time"]
-            window = self.df.iloc[i - LOOKBACK_CANDLES : i]
-            current_candle = self.df.iloc[i]
+            current_time = self.df_base.iloc[i]["time"]
+            current_candle = self.df_base.iloc[i]
 
             print(f"\n--- Step {step_num}/{total_steps} | {current_time} | Balance: ${self.balance:,.2f} ---")
 
-            # 모킹할 반환값 준비
-            mock_ohlcv = self._build_mock_ohlcv(window)
+            # 각 타임프레임별로 현재 시간 이하의 캔들만 잘라서 반환하도록 모킹
+            def mock_fetch_ohlcv_func(sym, tf, count):
+                if tf not in self.dfs:
+                    return pd.DataFrame()
+                df = self.dfs[tf]
+                window = df[df["time"] <= current_time].tail(count)
+                return self._build_mock_ohlcv(window)
+
             mock_price = self._build_mock_price(current_candle)
             mock_account = self._build_mock_account()
 
             # MT5 함수들을 모킹하여 과거 데이터를 반환하도록 패치
-            with patch("backend.workflows.nodes.fetch_ohlcv", return_value=mock_ohlcv), \
+            with patch("backend.workflows.nodes.fetch_ohlcv", side_effect=mock_fetch_ohlcv_func), \
                  patch("backend.workflows.nodes.get_current_price", return_value=mock_price), \
                  patch("backend.workflows.nodes.get_account_summary", return_value=mock_account), \
                  patch("backend.workflows.nodes.is_mt5_available", return_value=True), \
@@ -182,7 +194,7 @@ class BacktestEngine:
                  }):
 
                 try:
-                    initial_state = {"symbol": self.symbol, "timeframe": self.timeframe}
+                    initial_state = {"symbol": self.symbol, "timeframes": self.timeframes}
                     final_state = {}
 
                     for s in graph.stream(initial_state):
@@ -230,8 +242,8 @@ class BacktestEngine:
                         "reasoning": final_order.get("reasoning", final_order.get("final_reasoning", "")),
                     }
 
-                    # SL/TP 도달 여부 판정
-                    future_candles = self.df.iloc[i + 1 : i + 1 + self.step_interval * 5]
+                    # SL/TP 도달 여부 판정 (가장 작은 타임프레임 기준)
+                    future_candles = self.df_base.iloc[i + 1 : i + 1 + self.step_interval * 5]
                     if len(future_candles) > 0:
                         evaluated = self._evaluate_trade(trade_record, future_candles)
                     else:
@@ -259,22 +271,30 @@ class BacktestEngine:
 
 def main():
     parser = argparse.ArgumentParser(description="Agentic Backtest Runner")
-    parser.add_argument("--data", type=str, required=True, help="과거 데이터 CSV 파일 경로")
+    parser.add_argument("--data", type=str, required=True, help="콤마로 구분된 데이터 파일 경로들 (예: file1.csv,file2.csv)")
     parser.add_argument("--symbol", type=str, default="EURUSD", help="종목 코드 (기본: EURUSD)")
-    parser.add_argument("--timeframe", type=str, default="M5", help="타임프레임 (기본: M5)")
+    parser.add_argument("--timeframes", type=str, default="M5", help="콤마로 구분된 타임프레임 (예: M5,H1)")
     parser.add_argument("--balance", type=float, default=DEFAULT_INITIAL_BALANCE, help="초기 잔고 (기본: 10000)")
     parser.add_argument("--step", type=int, default=STEP_INTERVAL, help="파이프라인 호출 간격 (캔들 수, 기본: 5)")
     parser.add_argument("--report", action="store_true", help="백테스트 완료 후 리포트 자동 생성")
     args = parser.parse_args()
 
-    if not os.path.exists(args.data):
-        print(f"❌ 데이터 파일을 찾을 수 없습니다: {args.data}")
+    data_paths = args.data.split(",")
+    timeframes = args.timeframes.split(",")
+    
+    if len(data_paths) != len(timeframes):
+        print(f"❌ 데이터 파일 수({len(data_paths)})와 타임프레임 수({len(timeframes)})가 일치해야 합니다.")
         sys.exit(1)
 
+    for path in data_paths:
+        if not os.path.exists(path.strip()):
+            print(f"❌ 데이터 파일을 찾을 수 없습니다: {path.strip()}")
+            sys.exit(1)
+
     engine = BacktestEngine(
-        data_path=args.data,
+        data_paths=data_paths,
         symbol=args.symbol,
-        timeframe=args.timeframe,
+        timeframes=timeframes,
         initial_balance=args.balance,
         step_interval=args.step,
     )
@@ -286,7 +306,7 @@ def main():
         report_path = generate_backtest_report(
             trades=trades,
             equity_curve=engine.equity_curve,
-            df=engine.df,
+            df=engine.df_base,
             symbol=args.symbol,
             initial_balance=args.balance,
             final_balance=engine.balance,

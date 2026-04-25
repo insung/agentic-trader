@@ -1,0 +1,13 @@
+{
+    "mcpServers": {
+       "git": {
+           "command": "npx",
+           "args": [
+               "-y",
+               "@cyanheads/git-mcp-server",
+               "--repository",
+               "/home/insung/Github/agentic-trader"
+           ]
+       }
+   }
+}

@@ -9,34 +9,34 @@
 ```mermaid
 flowchart TD
     %% 트리거 소스
-    subgraph Triggers [1. Python Dispatcher]
-        W[Webhook / API Call] --> D{Dispatcher}
-        M[Price Alert Scanner] --> D
-        C[Cron Scheduler] --> D
+    subgraph Triggers ["1. Python Dispatcher"]
+        W["Webhook / API Call"] --> D{"Dispatcher"}
+        M["Price Alert Scanner"] --> D
+        C["Cron Scheduler"] --> D
     end
 
     %% LangGraph 파이프라인
-    subgraph LangGraph [2. LangGraph State Machine]
-        D -->|Start Graph| N_Data[Node 1: Fetch Data\n(Python + Portfolio Info)]
+    subgraph LangGraph ["2. LangGraph State Machine"]
+        D -->|"Start Graph"| N_Data["Node 1: Fetch Data\n(Python + Portfolio Info)"]
         
-        N_Data -->|Raw JSON + Account| N_Tech(Node 2: Tech Analyst\nLLM Call + Retry)
+        N_Data -->|"Raw JSON + Account"| N_Tech("Node 2: Tech Analyst\nLLM Call + Retry")
         
-        N_Tech -->|trade_worthy=False| End((End))
-        N_Tech -->|trade_worthy=True| N_Strat(Node 3: Strategist\nLLM Call + KB Injection)
+        N_Tech -->|"trade_worthy=False"| End(("End"))
+        N_Tech -->|"trade_worthy=True"| N_Strat("Node 3: Strategist\nLLM Call + KB Injection")
         
-        N_Strat -->|Hypothesis| N_Sent(Node 4: Sentiment Analyst\nLLM Call - Optional)
+        N_Strat -->|"Hypothesis"| N_Sent("Node 4: Sentiment Analyst\nLLM Call - Optional")
         
-        DB[(Knowledge Base\nVector DB / JSON)] -.->|Retrieve Past Logs| N_Trader
+        DB[("Knowledge Base\nVector DB / JSON")] -.->|"Retrieve Past Logs"| N_Trader
         N_Strat --> N_Trader
-        N_Sent --> N_Trader(Node 5: Chief Trader\nLLM Call + Portfolio Awareness)
+        N_Sent --> N_Trader("Node 5: Chief Trader\nLLM Call + Portfolio Awareness")
         
-        N_Trader -->|Trade Signal| Guard{Python Guardrails\nExecution Interceptor}
-        Guard -->|Reject| End
+        N_Trader -->|"Trade Signal"| Guard{"Python Guardrails\nExecution Interceptor"}
+        Guard -->|"Reject"| End
         
-        Guard -->|Pass| Exec[Execute Order\n(MT5 API)]
+        Guard -->|"Pass"| Exec["Execute Order\n(MT5 API)"]
         
-        Exec -->|Result| N_Review(Node 6: Risk Reviewer\nLLM Call)
-        N_Review -->|Save Journal| DB
+        Exec -->|"Result"| N_Review("Node 6: Risk Reviewer\nLLM Call")
+        N_Review -->|"Save Journal"| DB
         N_Review --> End
     end
 

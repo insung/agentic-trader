@@ -1,4 +1,5 @@
-import MetaTrader5 as mt5
+import pytest
+mt5 = pytest.importorskip("MetaTrader5")
 
 def test_connection():
     # MT5 터미널 연결 시도

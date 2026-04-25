@@ -9,6 +9,27 @@ AI(LLM)를 두뇌로 활용하여 해외선물 및 주식을 자율적으로 거
 *   **Multi-Agent Reflexion Loop:** 단일 프롬프트가 아닌, 기술 분석가 -> 전략가 -> 트레이더 -> 복기 서기 로 이어지는 다중 페르소나 협업 구조를 통해 사람과 같은 입체적인 매매를 지향합니다.
 *   **Knowledge-Based Reasoning:** `docs/trading-strategies/`에 저장된 전문 전략 지식 베이스를 동적으로 주입하여 전략적 일관성을 유지합니다.
 
+## Quick Start (개발 및 테스트)
+
+이 프로젝트는 터미널 명령어를 간소화하기 위해 `Makefile`을 제공합니다.
+
+1.  **의존성 설치:**
+    ```bash
+    make install
+    ```
+2.  **안전한 테스트 실행 (MT5 미연결 상태에서도 동작):**
+    ```bash
+    make test
+    ```
+3.  **FastAPI 서버 실행:**
+    ```bash
+    make run
+    ```
+4.  **수동으로 AI 매매 파이프라인 1사이클 트리거 (서버 구동 중):**
+    ```bash
+    make trigger
+    ```
+
 ## 💻 로컬 환경 세팅 가이드 (Linux/Wine)
 MetaTrader 5는 공식적으로 Windows만 지원하므로, Linux 환경에서는 Wine을 사용해야 합니다. 
 

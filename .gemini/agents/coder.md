@@ -1,7 +1,6 @@
 ---
 name: coder
 description: Agentic Trader의 파이썬 백엔드(FastAPI) 및 LangGraph 파이프라인 구현을 전담하는 수석 개발자 서브 에이전트입니다.
-role: Agentic Trader의 파이썬 백엔드(FastAPI) 및 LangGraph 파이프라인 구현을 전담하는 수석 개발자 서브 에이전트입니다.
 model: gemini-3.1-pro-preview
 temperature: 0.2
 max_turns: 30

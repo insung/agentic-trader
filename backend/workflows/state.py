@@ -23,3 +23,9 @@ class AgentState(TypedDict, total=False):
     
     # Node 4: Chief Trader
     final_order: Dict[str, Any]
+    
+    # Node 4.5: Execute Order
+    order_result: Dict[str, Any]
+    
+    # Node 5: Risk Reviewer
+    review_log: Dict[str, Any]

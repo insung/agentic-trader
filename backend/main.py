@@ -20,13 +20,33 @@ class TriggerResponse(BaseModel):
     message: str
     symbol: str
 
+# 1. MT5 모듈 임포트 및 예외 처리 (Wine 환경 고려)
+try:
+    import MetaTrader5 as mt5
+except ImportError:
+    print("Warning: MetaTrader5 package not found. (Expected in non-Wine environments)")
+    mt5 = None
+
+from backend.services.mt5_client import init_mt5_connection
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("🚀 Starting up Agentic Trader Backend...")
-    # TODO: MT5 연결 초기화 로직 (backend.services.mt5_client.init_mt5_connection)
+    
+    # 2. Startup 로직: MT5 연결 초기화
+    if init_mt5_connection():
+        print("✅ MT5 initialized successfully.")
+    else:
+        print("⚠️ MT5 initialization failed.")
+        
     yield
+    
     print("💤 Shutting down Agentic Trader Backend...")
-    # TODO: MT5 연결 안전하게 종료 (mt5.shutdown)
+    
+    # 3. Shutdown 로직: MT5 연결 안전 종료
+    if mt5 is not None:
+        mt5.shutdown()
+        print("✅ MT5 shutdown successfully.")
 
 app = FastAPI(
     title="Agentic Trader API", 

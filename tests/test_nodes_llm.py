@@ -31,6 +31,8 @@ def test_tech_analyst_node(mock_llm, mock_state):
     # Mock return value of the chain using actual Pydantic object
     mock_structured_llm.invoke.return_value = TechSummary(
         trend="bullish",
+        market_regime="Bullish",
+        trade_worthy=True,
         key_observations=["rsi is low"],
         support_levels=[49000.0],
         resistance_levels=[51000.0],
@@ -60,6 +62,8 @@ def test_strategist_node(mock_llm, mock_state):
     
     mock_state["tech_summary"] = {
         "trend": "bullish",
+        "market_regime": "Bullish",
+        "trade_worthy": True,
         "key_observations": ["rsi is low"],
         "support_levels": [49000.0],
         "resistance_levels": [51000.0],

@@ -14,6 +14,7 @@ from backend.core.guardrails import enforce_one_percent_rule
 # Pydantic Models for Structured Output
 class TechSummary(BaseModel):
     trend: str = Field(description="bullish | bearish | neutral")
+    market_regime: str = Field(description="One of: Bullish, Bearish, Ranging, High Volatility")
     trade_worthy: bool = Field(description="True if the market has clear direction and is worth trading, False if choppy/flat.")
     key_observations: List[str] = Field(description="List of key observations")
     support_levels: List[float] = Field(description="Support levels")
@@ -54,17 +55,38 @@ def _read_prompt(agent_name: str) -> str:
     except FileNotFoundError:
         return f"System prompt for {agent_name} not found."
 
-def _read_strategies() -> str:
+def _read_strategies(market_regime: str = "Ranging") -> str:
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     strategies_dir = os.path.join(base_dir, "docs", "trading-strategies")
+    config_path = os.path.join(base_dir, "backend", "config", "strategies_config.json")
+    
     strategies_text = ""
-    if os.path.exists(strategies_dir):
-        for filename in os.listdir(strategies_dir):
-            if filename.endswith(".md"):
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        
+        for strat in config.get("strategies", []):
+            if market_regime in strat.get("allowed_regimes", []):
+                filename = strat.get("file")
                 filepath = os.path.join(strategies_dir, filename)
-                with open(filepath, "r", encoding="utf-8") as f:
-                    strategies_text += f"\n--- {filename} ---\n"
-                    strategies_text += f.read()
+                if os.path.exists(filepath):
+                    with open(filepath, "r", encoding="utf-8") as sf:
+                        strategies_text += f"\n--- {strat.get('name')} ---\n"
+                        strategies_text += sf.read()
+    except Exception as e:
+        print(f"Error reading strategies config: {e}")
+        # Fallback to returning all .md files if config fails
+        if os.path.exists(strategies_dir):
+            for filename in os.listdir(strategies_dir):
+                if filename.endswith(".md"):
+                    filepath = os.path.join(strategies_dir, filename)
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        strategies_text += f"\n--- {filename} ---\n"
+                        strategies_text += f.read()
+
+    if not strategies_text.strip():
+        strategies_text = "No matching strategies found for current market regime."
+        
     return strategies_text
 
 def fetch_data_node(state: AgentState) -> Dict[str, Any]:
@@ -107,7 +129,9 @@ def strategist_node(state: AgentState) -> Dict[str, Any]:
     structured_llm = llm.with_structured_output(StrategyHypothesis)
     
     system_prompt = _read_prompt("strategist")
-    strategies_kb = _read_strategies()
+    tech_summary_data = state.get('tech_summary', {})
+    market_regime = tech_summary_data.get('market_regime', 'Ranging')
+    strategies_kb = _read_strategies(market_regime)
     
     human_content = f"Here is the Tech Summary:\n{state.get('tech_summary', {})}\n\n"
     human_content += f"Available Trading Strategies (Knowledge Base):\n{strategies_kb}"

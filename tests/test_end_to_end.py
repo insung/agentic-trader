@@ -46,6 +46,8 @@ def test_end_to_end_trading_pipeline(mock_execute_order, mock_fetch_ohlcv, mock_
     
     tech_summary_mock = TechSummary(
         trend="bullish",
+        market_regime="Bullish",
+        trade_worthy=True,
         key_observations=["Price is above SMA 200"],
         support_levels=[1.0450],
         resistance_levels=[1.0550],
@@ -98,7 +100,8 @@ def test_end_to_end_trading_pipeline(mock_execute_order, mock_fetch_ohlcv, mock_
     final_state = initial_state.copy()
     for s in graph.stream(initial_state):
         node_name = list(s.keys())[0]
-        final_state.update(s[node_name])
+        if s[node_name]:
+            final_state.update(s[node_name])
     
     # 5. Assertions
     # Check that MT5 functions were called

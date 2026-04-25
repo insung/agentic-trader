@@ -2,6 +2,7 @@ import pytest
 from backend.workflows.graph import get_compiled_graph
 from backend.workflows.state import AgentState
 
+@pytest.mark.skip(reason="Obsolete: nodes now use real LLM. Use test_end_to_end.py instead.")
 def test_dummy_pipeline_execution():
     """
     Test the sequential execution of the LangGraph pipeline with dummy nodes.

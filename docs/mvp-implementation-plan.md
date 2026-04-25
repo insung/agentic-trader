@@ -62,3 +62,29 @@ agentic-trader/
         *   **완료 세부사항:** `execute_order_node` 추가 및 `main.py`에 `/api/v1/trade/trigger` 비동기 워크플로우 실행 엔드포인트 연동. End-to-End 테스트(`tests/test_end_to_end.py`) 통과.
     *   [x] **Risk Reviewer** 노드가 포지션 청산 후 매매 결과를 복기하고 일지를 작성하여, 이를 벡터 DB 또는 마크다운 파일로 저장하여 다음 매매 시 `Chief Trader`가 참조할 수 있도록 자가 발전 루프 구현.
         *   **완료 세부사항:** `risk_reviewer_node` 구현, `.agents/agents/risk_reviewer.md` 프롬프트 작성 및 상태(`order_result`, `review_log`) 추가 완료.
+
+### Phase 5: 동적 전략 주입 시스템 및 환경 최적화 (완료)
+*   **목표:** 에이전트의 전략 환각을 방지하고 유연한 플러그인식 전략 추가 구조 마련 및 테스트 환경 안정화.
+*   **작업 내용:**
+    *   [x] 리눅스 환경에서 MT5 의존성 에러 우회 처리 및 테스트 환경 통과. (`tests/test_mt5_connection.py`, `conftest.py` -> `Makefile` 자동화로 대체)
+    *   [x] `Tech Analyst` 노드가 시장 상태(Market Regime)를 진단하도록 프롬프트 업데이트.
+    *   [x] `backend/config/strategies_config.json` 레지스트리를 구축하여, 장세에 맞는 전략만 `Strategist` 에이전트에게 동적으로 주입하는 파이프라인 구현 완료. (`backend/workflows/nodes.py`)
+
+---
+
+## 🔮 향후 과제 (Future Roadmap)
+MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"로 거듭나기 위해 필요한 고도화 작업들입니다.
+
+### Phase 6: 실거래 전환 및 모니터링 대시보드 구축 (예정)
+*   **목표:** 종이 거래(Paper Trading)에서 실 계좌(Live Account)로 전환하고, 에이전트들의 활동을 시각화.
+*   **계획:**
+    *   데모 계좌에서 1주일 이상 안정성(Safety Guardrails 정상 작동 여부) 검증 후 Live 계좌 연동.
+    *   `Sentiment Analyst` 노드(뉴스, 공포/탐욕 지수 파악) 활성화 및 파이프라인 정식 편입.
+    *   FastAPI를 기반으로 React 또는 Vue.js를 활용한 웹 대시보드 제작 (현재 포지션, AI 분석 브리핑, 일일 손익 실시간 모니터링).
+
+### Phase 7: RAG 고도화 및 다중 자산(Multi-Asset) 포트폴리오 (예정)
+*   **목표:** 스스로 학습하는 지식 베이스 구축과 거래 종목 확장.
+*   **계획:**
+    *   `Risk Reviewer`가 남긴 매매 일지(`docs/trading_logs/`)를 ChromaDB 등 벡터 데이터베이스에 임베딩.
+    *   `Chief Trader`가 과거의 유사한 차트 패턴이나 실패했던 매매 기록을 벡터 검색(RAG)하여 실수를 반복하지 않도록 기억력(Memory) 부여.
+    *   EURUSD 단일 종목에서 벗어나 나스닥(US100), 금(XAUUSD), 비트코인(BTCUSD) 등 다중 자산 병렬 트레이딩 파이프라인 가동.

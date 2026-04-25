@@ -119,3 +119,8 @@ def execute_mock_order(symbol: str, action: str, lot_size: float, sl: float, tp:
     }
     print("[Paper Trading] Mock order executed successfully.")
     return mock_result
+
+class MT5Client:
+    """Class wrapper for MT5 interactions to support Dependency Injection."""
+    def send_order(self, symbol: str, order_type: str, volume: float, price: float, sl: float, tp: float) -> dict:
+        return send_market_order(symbol, order_type, volume, sl, tp)

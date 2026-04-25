@@ -10,7 +10,7 @@ from backend.workflows.nodes import (
 )
 
 def tech_analyst_router(state: AgentState) -> str:
-    tech_summary = state.get("tech_summary", {})
+    tech_summary = getattr(state, "tech_summary", {})
     if not tech_summary.get("trade_worthy", True):
         print("Market is choppy. Short-circuiting workflow.")
         return END

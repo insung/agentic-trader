@@ -23,6 +23,12 @@
     *   새로운 트레이딩 전략을 추가할 때 파이썬 코드를 하드코딩하지 마십시오.
     *   전략은 반드시 `docs/trading-strategies/`에 마크다운으로 작성하고, `backend/config/strategies_config.json` 레지스트리에 시장 상태(Market Regime)와 함께 매핑해야 합니다. 파이썬 백엔드가 이를 필터링하여 프롬프트에 동적으로 주입합니다.
 
+5.  **AI-Native 아키텍처 (Vertical Slicing & Pydantic):**
+    *   미래의 AI 세션이 코드를 환각 없이 분석할 수 있도록, 무분별한 클래스/인터페이스 쪼개기(과도한 Clean Architecture)를 금지합니다.
+    *   **Locality of Behavior:** 특정 기능에 관련된 어댑터, 유스케이스, 가드레일 로직은 가급적 하나의 디렉토리(`backend/features/`)에 응집시킵니다.
+    *   **Data-Centric:** 도메인 객체는 복잡한 메서드를 가진 OOP 클래스 대신, 완벽하게 직렬화/역직렬화가 가능한 순수 `Pydantic` 모델로 선언하여 LangGraph의 `State`와 일관성을 유지합니다.
+    *   이러한 '수직적 기능 분리'는 향후 UI/대시보드 애플리케이션 추가 시 완벽하게 타입핑된 JSON API를 제공할 수 있어 프론트엔드 확장에 이상적입니다.
+
 ## 📂 2. 핵심 컨텍스트 가이드 (Core Context)
 
 이 프로젝트를 수정하거나 코드를 작성하기 전에 아래 문서들을 반드시 숙지하십시오.

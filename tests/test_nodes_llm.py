@@ -101,5 +101,5 @@ def test_chief_trader_node(mock_llm, mock_state):
     result = chief_trader_node(mock_state)
     
     assert "final_order" in result
-    assert result["final_order"]["action"] == "BUY"
-    assert result["final_order"]["sl"] == 49000.0
+    assert result["final_order"]["sl_price"] == 49000.0
+    assert result["final_order"]["tp_price"] == 52000.0

@@ -122,5 +122,5 @@ def test_end_to_end_trading_pipeline(mock_execute_order, mock_fetch_ohlcv, mock_
     assert "order_result" in final_state
     assert "review_log" in final_state
     
-    assert final_state["order_result"]["retcode"] == 10009
+    assert final_state["order_result"]["success"] == True
     assert final_state["review_log"]["trade_summary"] == "Executed a BUY order."

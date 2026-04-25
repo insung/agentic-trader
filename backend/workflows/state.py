@@ -1,31 +1,4 @@
-from typing import TypedDict, Any, Dict, List, Optional
+from backend.core.state_models import AgentStateSchema
 
-class AgentState(TypedDict, total=False):
-    """
-    State shared across all nodes in the LangGraph pipeline.
-    total=False allows missing keys during initialization.
-    """
-    # Meta Context
-    symbol: str
-    timeframe: str
-    error_flag: bool
-    
-    # Node 1: Fetch Data
-    raw_data: str 
-    account_info: Dict[str, Any]
-    open_positions: List[Dict[str, Any]]
-    
-    # Node 2: Tech Analyst
-    tech_summary: Dict[str, Any]
-    
-    # Node 3: Strategist
-    strategy_hypothesis: Dict[str, Any]
-    
-    # Node 4: Chief Trader
-    final_order: Dict[str, Any]
-    
-    # Node 4.5: Execute Order
-    order_result: Dict[str, Any]
-    
-    # Node 5: Risk Reviewer
-    review_log: Dict[str, Any]
+# We export AgentState as an alias to AgentStateSchema to avoid breaking other imports that rely on AgentState name
+AgentState = AgentStateSchema

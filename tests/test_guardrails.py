@@ -5,7 +5,7 @@ import os
 # Add the project root to sys.path to import backend modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from backend.core.guardrails import (
+from backend.features.trading.guardrails import (
     validate_daily_drawdown_lock,
     validate_max_trades_per_day,
     validate_risk_reward_ratio,

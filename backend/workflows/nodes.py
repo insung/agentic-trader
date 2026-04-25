@@ -8,8 +8,8 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from backend.workflows.state import AgentState
-from backend.services.mt5_client import fetch_ohlcv, get_account_summary, execute_mock_order
-from backend.core.guardrails import enforce_one_percent_rule
+from backend.features.trading.mt5_adapter import fetch_ohlcv, get_account_summary, execute_mock_order
+from backend.features.trading.guardrails import enforce_one_percent_rule
 
 # Pydantic Models for Structured Output
 class TechSummary(BaseModel):
@@ -92,7 +92,7 @@ def _read_strategies(market_regime: str = "Ranging") -> str:
 def fetch_data_node(state: AgentState) -> Dict[str, Any]:
     """Node 1: Fetch OHLCV Data and calculate indicators."""
     print("[Node 1] fetch_data_node executed")
-    symbol = state.get("symbol", "EURUSD")
+    symbol = getattr(state, "symbol", "EURUSD")
     
     account_info = get_account_summary()
     df = fetch_ohlcv(symbol, 16385, 100)
@@ -112,7 +112,7 @@ def tech_analyst_node(state: AgentState) -> Dict[str, Any]:
     structured_llm = llm.with_structured_output(TechSummary)
     
     system_prompt = _read_prompt("tech_analyst")
-    human_content = f"Here is the raw data:\n{state.get('raw_data', '')}"
+    human_content = f"Here is the raw data:\n{getattr(state, 'raw_data', '')}"
     messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_content)]
     
     try:
@@ -129,11 +129,11 @@ def strategist_node(state: AgentState) -> Dict[str, Any]:
     structured_llm = llm.with_structured_output(StrategyHypothesis)
     
     system_prompt = _read_prompt("strategist")
-    tech_summary_data = state.get('tech_summary', {})
+    tech_summary_data = getattr(state, 'tech_summary', {})
     market_regime = tech_summary_data.get('market_regime', 'Ranging')
     strategies_kb = _read_strategies(market_regime)
     
-    human_content = f"Here is the Tech Summary:\n{state.get('tech_summary', {})}\n\n"
+    human_content = f"Here is the Tech Summary:\n{getattr(state, 'tech_summary', {})}\n\n"
     human_content += f"Available Trading Strategies (Knowledge Base):\n{strategies_kb}"
     messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_content)]
     
@@ -151,12 +151,21 @@ def chief_trader_node(state: AgentState) -> Dict[str, Any]:
     structured_llm = llm.with_structured_output(FinalOrder)
     
     system_prompt = _read_prompt("chief_trader")
-    human_content = f"Here is the Strategy Hypothesis:\n{state.get('strategy_hypothesis', {})}"
+    human_content = f"Here is the Strategy Hypothesis:\n{getattr(state, 'strategy_hypothesis', {})}"
     messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_content)]
     
     try:
         response = _invoke_llm_with_retry(structured_llm, messages)
-        return {"final_order": response.model_dump(), "error_flag": False}
+        final_order_dict = {
+            "action": response.action,
+            "symbol": getattr(state, "symbol", "EURUSD"),
+            "entry_price": 1.055, # placeholder
+            "sl_price": response.sl,
+            "tp_price": response.tp,
+            "lot_size": 0.0,
+            "reasoning": response.final_reasoning
+        }
+        return {"final_order": final_order_dict, "error_flag": False}
     except Exception as e:
         print(f"LLM API completely failed after retries: {e}")
         return {"error_flag": True}
@@ -164,15 +173,18 @@ def chief_trader_node(state: AgentState) -> Dict[str, Any]:
 def execute_order_node(state: AgentState) -> Dict[str, Any]:
     """Node 4.5: Executes the order based on Chief Trader's decision."""
     print("[Node 4.5] execute_order_node executed")
-    final_order = state.get("final_order", {})
-    action = final_order.get("action", "HOLD")
+    final_order = getattr(state, "final_order", None)
     
+    if not final_order:
+        return {"order_result": {"status": "skipped", "reason": "No final_order"}}
+        
+    action = final_order.action.value if hasattr(final_order.action, 'value') else final_order.action
     if action.upper() not in ["BUY", "SELL"]:
         return {"order_result": {"status": "skipped", "reason": f"Action was {action}"}}
         
-    symbol = state.get("symbol", "EURUSD")
-    sl = final_order.get("sl", 0.0)
-    tp = final_order.get("tp", 0.0)
+    symbol = getattr(state, "symbol", "EURUSD")
+    sl = final_order.sl_price
+    tp = final_order.tp_price
     
     account_info = get_account_summary()
     balance = account_info.get("balance", 10000.0)
@@ -184,7 +196,13 @@ def execute_order_node(state: AgentState) -> Dict[str, Any]:
          return {"order_result": {"status": "rejected", "reason": "Guardrail: lot size calculated to <= 0"}}
          
     result = execute_mock_order(symbol, action, lot_size, sl, tp, entry_price)
-    return {"order_result": result}
+    order_result_dict = {
+        "success": result.get("retcode") == 10009,
+        "ticket": result.get("order"),
+        "executed_price": result.get("price"),
+        "timestamp": datetime.now().isoformat()
+    }
+    return {"order_result": order_result_dict}
 
 def risk_reviewer_node(state: AgentState) -> Dict[str, Any]:
     """Node 5: Risk Reviewer reviews the entire process and logs the result."""
@@ -193,12 +211,15 @@ def risk_reviewer_node(state: AgentState) -> Dict[str, Any]:
     structured_llm = llm.with_structured_output(ReviewLog)
     
     system_prompt = _read_prompt("risk_reviewer")
+    final_order = getattr(state, "final_order", None)
+    order_result = getattr(state, "order_result", None)
+    
     human_content = json.dumps({
-        "raw_data": state.get("raw_data", ""),
-        "tech_summary": state.get("tech_summary", {}),
-        "strategy_hypothesis": state.get("strategy_hypothesis", {}),
-        "final_order": state.get("final_order", {}),
-        "order_result": state.get("order_result", {})
+        "raw_data": getattr(state, "raw_data", ""),
+        "tech_summary": getattr(state, "tech_summary", {}),
+        "strategy_hypothesis": getattr(state, "strategy_hypothesis", {}),
+        "final_order": final_order.model_dump() if hasattr(final_order, "model_dump") else (final_order or {}),
+        "order_result": order_result.model_dump() if hasattr(order_result, "model_dump") else (order_result or {})
     }, indent=2)
     messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_content)]
     

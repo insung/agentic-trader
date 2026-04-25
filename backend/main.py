@@ -27,7 +27,7 @@ except ImportError:
     print("Warning: MetaTrader5 package not found. (Expected in non-Wine environments)")
     mt5 = None
 
-from backend.services.mt5_client import init_mt5_connection
+from backend.features.trading.mt5_adapter import init_mt5_connection
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -65,13 +65,9 @@ async def health_check():
         system=platform.system()
     )
 
-from backend.core.guardrails import (
-    validate_risk_reward_ratio, 
-    enforce_one_percent_rule,
-    validate_daily_drawdown_lock,
-    validate_max_trades_per_day
-)
-from backend.services.mt5_client import execute_mock_order, send_market_order
+from backend.features.trading.usecase import TradeExecutionUseCase
+from backend.features.trading.mt5_adapter import MT5Client, execute_mock_order
+from backend.core.state_models import Order, OrderAction
 
 def run_trading_workflow(symbol: str):
     """
@@ -111,18 +107,25 @@ def run_trading_workflow(symbol: str):
         
         account_balance = final_state.get("account_info", {}).get("balance", 10000.0)
         entry_price = 1.055 # Mock entry price, should fetch from data
-        current_loss_pct = 0.0
-        today_trade_count = 0
         
-        if not validate_daily_drawdown_lock(current_loss_pct): return
-        if not validate_max_trades_per_day(today_trade_count): return
-        if not validate_risk_reward_ratio(entry_price, sl, tp): return
-            
-        safe_lot_size = enforce_one_percent_rule(account_balance, entry_price, sl)
-        if safe_lot_size <= 0: return
-            
-        print(f"🔥 Executing order: {action} {symbol} | Lot: {safe_lot_size} | SL: {sl} | TP: {tp}")
-        execute_mock_order(symbol, action, safe_lot_size, sl, tp, entry_price)
+        order = Order(
+            action=OrderAction(action.upper()),
+            symbol=symbol,
+            entry_price=entry_price,
+            sl_price=sl,
+            tp_price=tp,
+            reasoning=final_order.get("reasoning", "")
+        )
+        
+        usecase = TradeExecutionUseCase(MT5Client())
+        result = usecase.execute_trade(
+            order=order,
+            current_loss_pct=0.0,
+            today_trade_count=0,
+            account_balance=account_balance
+        )
+        print(f"🔥 Executing order Result: {result}")
+        execute_mock_order(symbol, action, order.lot_size, sl, tp, entry_price)
         
     except Exception as e:
         print(f"❌ Error in trading workflow for {symbol}: {e}")

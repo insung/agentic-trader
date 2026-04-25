@@ -25,4 +25,4 @@ htmlcov/
 # Backtest data and results
 backtests/data/
 backtests/results/
-docs/trading_logs/backtest_results/
+docs/trading_logs/

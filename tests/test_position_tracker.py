@@ -4,8 +4,10 @@ from backend.features.trading import position_tracker
 def test_paper_position_review_runs_only_after_close(tmp_path, monkeypatch):
     tracked_path = tmp_path / "tracked_positions.json"
     reviewed_path = tmp_path / "reviewed_trades.json"
+    trading_log_db = tmp_path / "trading_logs.sqlite"
     monkeypatch.setattr(position_tracker, "TRACKED_POSITIONS_PATH", str(tracked_path))
     monkeypatch.setattr(position_tracker, "REVIEWED_TRADES_PATH", str(reviewed_path))
+    monkeypatch.setattr(position_tracker, "TRADING_LOG_DB_PATH", str(trading_log_db))
 
     review_calls = []
 

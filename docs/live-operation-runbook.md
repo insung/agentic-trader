@@ -25,11 +25,12 @@ MT5에서 확인할 항목:
 - 현재 손익
 - 청산 이력
 
-`MODE=paper`는 MT5에 주문을 넣지 않는 mock/paper 모드입니다. 이 경우 MT5에는 포지션이 보이지 않으며, 상태는 로컬 파일과 서버 로그로 확인합니다.
+`MODE=paper`는 MT5에 주문을 넣지 않는 mock/paper 모드입니다. 이 경우 MT5에는 포지션이 보이지 않으며, 상태는 로컬 파일, SQLite, 서버 로그로 확인합니다.
 
 ```text
 trading_logs/tracked_positions.json
 trading_logs/review_*.md
+trading_logs/trading_logs.sqlite
 ```
 
 ## 컴퓨터를 계속 켜둬야 하는가
@@ -47,7 +48,7 @@ trading_logs/review_*.md
 
 - 새 매매 판단
 - 청산 감지
-- `trading_logs/review_*.md` 생성
+- `trading_logs/review_*.md` 및 `trading_logs/trading_logs.sqlite` 복기 기록 생성
 - 자동 운영 루프
 
 ## 재시작 후 확인 절차
@@ -79,7 +80,7 @@ curl http://127.0.0.1:8001/api/v1/health
 cat trading_logs/tracked_positions.json
 ```
 
-여기에 포지션이 남아 있으면, 이전에 봇이 열었지만 아직 복기 완료되지 않은 거래가 있다는 뜻입니다.
+여기에 포지션이 남아 있으면, 이전에 봇이 열었지만 아직 복기 완료되지 않은 거래가 있다는 뜻입니다. JSON 파일이 없으면 SQLite의 `tracked_positions` 테이블이 보조 저장소 역할을 합니다.
 
 5. MT5에서 실제 열린 포지션 확인
    - MT5 터미널의 Trade 탭에서 현재 포지션 확인
@@ -94,8 +95,8 @@ make reconcile
 이 명령은 다음 중 하나를 수행합니다.
 
 - 아직 열린 포지션이면 그대로 둠
-- 이미 청산된 포지션이면 MT5 이력/현재가를 보고 `review_*.md` 생성
-- 복기 완료한 ticket은 `trading_logs/reviewed_trades.json`에 기록
+- 이미 청산된 포지션이면 MT5 이력/현재가를 보고 `review_*.md`와 SQLite `trade_reviews` 생성
+- 복기 완료한 ticket은 `trading_logs/reviewed_trades.json` 및 SQLite `reviewed_trade_ids`에 기록
 
 7. 복기 파일 확인
 

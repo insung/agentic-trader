@@ -13,6 +13,7 @@ from backend.features.trading.guardrails import enforce_one_percent_rule, valida
 from backend.features.trading.indicators import add_technical_indicators, build_indicator_snapshot
 from backend.features.trading.market_hours import is_market_open, get_market_status_message
 from backend.features.trading.strategy_validators import validate_strategy_setup
+from backend.features.trading.trading_log_store import store_trade_review, DEFAULT_TRADING_LOG_DB_PATH
 
 # Pydantic Models for Structured Output
 class TechSummary(BaseModel):
@@ -331,7 +332,37 @@ def risk_reviewer_node(state: AgentState) -> Dict[str, Any]:
             f.write(f"## Summary\n{review_log.get('trade_summary', '')}\n\n")
             f.write(f"## Risk Assessment\n{review_log.get('risk_assessment', '')}\n\n")
             f.write(f"## Lessons Learned\n{review_log.get('lessons_learned', '')}\n")
-        
+
+        markdown_body = (
+            f"# Trade Review Log\n\n"
+            f"**Date**: {datetime.now().isoformat()}\n\n"
+            f"## Summary\n{review_log.get('trade_summary', '')}\n\n"
+            f"## Risk Assessment\n{review_log.get('risk_assessment', '')}\n\n"
+            f"## Lessons Learned\n{review_log.get('lessons_learned', '')}\n"
+        )
+        store_trade_review(
+            DEFAULT_TRADING_LOG_DB_PATH,
+            review_id=os.path.splitext(safe_filename)[0],
+            trade_id=str(closed_trade.get("trade_id")) if closed_trade.get("trade_id") else None,
+            symbol=closed_trade.get("symbol"),
+            reviewed_at=datetime.now().isoformat(),
+            source_path=file_path,
+            summary=review_log.get("trade_summary", ""),
+            risk_assessment=review_log.get("risk_assessment", ""),
+            lessons_learned=review_log.get("lessons_learned", ""),
+            markdown_body=markdown_body,
+            raw_payload={
+                "raw_data": getattr(state, "raw_data", ""),
+                "tech_summary": getattr(state, "tech_summary", {}),
+                "strategy_hypothesis": getattr(state, "strategy_hypothesis", {}),
+                "final_order": final_order.model_dump() if hasattr(final_order, "model_dump") else (final_order or {}),
+                "order_result": order_result.model_dump() if hasattr(order_result, "model_dump") else (order_result or {}),
+                "decision_context": decision_context,
+                "closed_trade": closed_trade,
+                "review_log": review_log,
+            },
+        )
+
         print(f"[Node 5] Review log saved to {file_path}")
         return {"review_log": review_log, "error_flag": False}
     except Exception as e:

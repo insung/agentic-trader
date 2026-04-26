@@ -7,7 +7,7 @@ selected setup actually satisfies the strategy document with computed data.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Iterable, Tuple
 
 
 @dataclass(frozen=True)
@@ -15,6 +15,7 @@ class StrategyGateConfig:
     min_adx: float = 25.0
     max_cross_age_bars: int = 6
     min_sl_atr: float = 1.0
+    ma_band_tolerance: float = 0.003
     bb_lookback_rows: int = 10
     bb_band_tolerance: float = 0.0015
 
@@ -26,6 +27,8 @@ def _strategy_name(strategy_hypothesis: Dict[str, Any]) -> str:
 def _base_snapshot(indicator_data: Dict[str, Any]) -> Dict[str, Any]:
     if not indicator_data:
         return {}
+    if "M15" in indicator_data:
+        return indicator_data.get("M15", {})
     first_key = next(iter(indicator_data.keys()), None)
     if first_key is None:
         return {}
@@ -44,7 +47,49 @@ def _sl_atr_ok(action: str, entry_price: float, sl_price: float, snapshot: Dict[
     return True, f"SL distance OK for {action} ({sl_atr:.2f} ATR)"
 
 
-def _validate_ma_crossover(action: str, snapshot: Dict[str, Any], config: StrategyGateConfig) -> Tuple[bool, str]:
+def _higher_timeframe_snapshots(indicator_data: Dict[str, Any], base_snapshot: Dict[str, Any]) -> Iterable[Dict[str, Any]]:
+    for snapshot in indicator_data.values():
+        if snapshot is base_snapshot:
+            continue
+        yield snapshot
+
+
+def _ma_has_higher_timeframe_conflict(action: str, indicator_data: Dict[str, Any], base_snapshot: Dict[str, Any]) -> Tuple[bool, str]:
+    for snapshot in _higher_timeframe_snapshots(indicator_data, base_snapshot):
+        latest = snapshot.get("latest", {})
+        close = latest.get("close")
+        ema20 = latest.get("ema20")
+        ema50 = latest.get("ema50")
+        if not all(value is not None for value in (close, ema20, ema50)):
+            continue
+        if action == "SELL" and ema20 > ema50 and close >= ema50:
+            return True, "higher timeframe bullish conflict"
+        if action == "SELL" and not (close < ema20 or ema20 < ema50):
+            return True, "higher timeframe is not bearish enough for SELL"
+        if action == "BUY" and ema20 < ema50 and close <= ema50:
+            return True, "higher timeframe bearish conflict"
+        if action == "BUY" and not (close > ema20 or ema20 > ema50):
+            return True, "higher timeframe is not bullish enough for BUY"
+    return False, ""
+
+
+def _ma_is_exhausted_band_entry(action: str, latest: Dict[str, Any], config: StrategyGateConfig) -> Tuple[bool, str]:
+    close = latest.get("close")
+    upper = latest.get("bb_upper20")
+    lower = latest.get("bb_lower20")
+    rsi = latest.get("rsi14")
+    if not all(value is not None for value in (close, upper, lower, rsi)):
+        return False, ""
+
+    tolerance = config.ma_band_tolerance
+    if action == "SELL" and close <= lower * (1 + tolerance) and rsi <= 35:
+        return True, "oversold lower-band exhaustion"
+    if action == "BUY" and close >= upper * (1 - tolerance) and rsi >= 65:
+        return True, "overbought upper-band exhaustion"
+    return False, ""
+
+
+def _validate_ma_crossover(action: str, snapshot: Dict[str, Any], indicator_data: Dict[str, Any], config: StrategyGateConfig) -> Tuple[bool, str]:
     latest = snapshot.get("latest", {})
     close = latest.get("close")
     ema20 = latest.get("ema20")
@@ -70,6 +115,15 @@ def _validate_ma_crossover(action: str, snapshot: Dict[str, Any], config: Strate
 
     if age is None or age > config.max_cross_age_bars:
         return False, f"EMA crossover is stale or absent (age={age}, max={config.max_cross_age_bars})"
+
+    has_conflict, conflict_reason = _ma_has_higher_timeframe_conflict(action, indicator_data, snapshot)
+    if has_conflict:
+        return False, conflict_reason
+
+    is_exhausted, exhaustion_reason = _ma_is_exhausted_band_entry(action, latest, config)
+    if is_exhausted:
+        return False, exhaustion_reason
+
     return True, "MA Crossover setup confirmed by EMA position, recent cross, and ADX"
 
 
@@ -139,7 +193,7 @@ def validate_strategy_setup(
         return False, sl_reason
 
     if "moving average" in strategy_name or "ma crossover" in strategy_name:
-        return _validate_ma_crossover(action, snapshot, config)
+        return _validate_ma_crossover(action, snapshot, indicator_data, config)
     if "bollinger" in strategy_name:
         return _validate_bollinger_reversion(action, snapshot, config)
 

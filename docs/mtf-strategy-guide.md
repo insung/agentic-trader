@@ -49,18 +49,19 @@ Agentic Trader의 MTF 엔진은 다음과 같이 작동합니다:
 
 ## 4. 백테스트 및 실행 방법
 
-다중 타임프레임 백테스트를 실행할 때는, **반드시 요구되는 타임프레임들의 데이터 파일을 콤마(,)로 구분하여 모두 넣어주어야 합니다.**
+다중 타임프레임 백테스트를 실행할 때는, 먼저 요구되는 타임프레임들의 과거 데이터를 SQLite에 적재한 뒤 같은 기간으로 조회합니다.
+일반적인 백테스트 체크리스트와 `RISK_PCT` 의미는 [backtesting-guide.md](./backtesting-guide.md)를 기준으로 확인하고, 이 문서에는 MTF 예시만 둡니다.
 
 ```bash
 # 1. 데이터 다운로드 (M5, H1 동시 다운로드)
 make backtest-fetch SYMBOL=BTCUSD FROM=2024-01-01 TO=2024-01-31 TIMEFRAMES=M5,H1
 
-# 2. 백테스트 실행 (데이터 파일 2개를 모두 주입)
+# 2. 백테스트 실행 (SQLite에서 M5, H1 기간 조회)
 make backtest-run \
-  DATA=backtests/data/BTCUSD_20240101-20240131_M5.csv,backtests/data/BTCUSD_20240101-20240131_H1.csv \
   SYMBOL=BTCUSD \
-  TIMEFRAMES=M5,H1
+  TIMEFRAMES=M5,H1 \
+  FROM=2024-01-01 \
+  TO=2024-01-31
 ```
 
-> **주의사항 (에러 방지):** `DATA` 파라미터에 파일 이름을 넘길 때는 반드시 `backtests/data/...` 와 같이 **디렉토리를 포함한 상대 경로 또는 절대 경로**를 정확히 입력해야 합니다. 단순 파일명만 적으면 "데이터 파일을 찾을 수 없습니다" 에러가 발생합니다.
-> CSV 파일명은 `SYMBOL_YYYYMMDD-YYYYMMDD_TIMEFRAME.csv` 형식을 사용합니다.
+> **주의사항 (에러 방지):** 기본 데이터 저장소는 `backtests/data/market_data.sqlite`입니다. `make backtest-fetch`를 먼저 실행하지 않았거나 해당 기간/timeframe 캔들이 없으면 백테스트가 명확한 에러로 중단됩니다.

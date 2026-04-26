@@ -1,12 +1,12 @@
 """
 Agentic Backtest Runner
 ========================
-저장된 과거 데이터(CSV)를 캔들 단위로 순회하면서
+저장된 과거 데이터(SQLite 기본, CSV 호환)를 캔들 단위로 순회하면서
 LangGraph 에이전트 파이프라인(app.invoke)을 반복 호출하여
 AI의 실제 매매 판단을 과거 데이터 위에서 시뮬레이션합니다.
 
 사용법:
-    python -m backend.scripts.run_backtest --data backtests/data/EURUSD_20250101-20250131_H1.csv
+    python -m backend.scripts.run_backtest --symbol BTCUSD --timeframes M15,M30 --from 2025-01-01 --to 2025-01-31
 """
 import argparse
 import json
@@ -14,11 +14,18 @@ import os
 import sys
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from unittest.mock import patch, MagicMock
 
 import pandas as pd
 
+from backend.features.trading.backtest_store import (
+    DEFAULT_BACKTEST_DB_PATH,
+    calculate_candle_quality,
+    load_candles,
+    persist_backtest_result,
+    store_backtest_report,
+)
 from backend.features.trading.guardrails import validate_order_prices
 from backend.features.trading.position_tracker import build_decision_context, review_closed_trade
 from backend.features.trading.strategy_validators import validate_strategy_setup
@@ -39,6 +46,49 @@ def _model_to_dict(value):
     return value
 
 
+def load_backtest_data_from_sqlite(
+    db_path: str,
+    symbol: str,
+    timeframes: List[str],
+    from_date: str,
+    to_date: str,
+) -> Tuple[Dict[str, pd.DataFrame], Dict[str, Dict[str, Any]]]:
+    """Load timeframe DataFrames from the SQLite candle store."""
+    dfs: Dict[str, pd.DataFrame] = {}
+    metadata: Dict[str, Dict[str, Any]] = {}
+    for tf in timeframes:
+        tf = tf.strip().upper()
+        df = load_candles(db_path, symbol, tf, from_date, to_date)
+        if df.empty:
+            raise ValueError(f"No candle data for {symbol} {tf} between {from_date} and {to_date}")
+        dfs[tf] = df
+        metadata[tf] = calculate_candle_quality(df)
+    return dfs, metadata
+
+
+def _calculate_run_statistics(trades: List[Dict[str, Any]], initial_balance: float, final_balance: float) -> Dict[str, Any]:
+    pnls = [float(t.get("pnl", 0.0) or 0.0) for t in trades]
+    wins = [p for p in pnls if p > 0]
+    losses = [p for p in pnls if p < 0]
+    gross_loss = abs(sum(losses))
+    profit_factor = (sum(wins) / gross_loss) if gross_loss > 0 else None
+
+    cumulative = initial_balance
+    peak = initial_balance
+    max_dd = 0.0
+    for pnl in pnls:
+        cumulative += pnl
+        peak = max(peak, cumulative)
+        if peak > 0:
+            max_dd = max(max_dd, (peak - cumulative) / peak * 100)
+
+    return {
+        "net_pnl": round(final_balance - initial_balance, 2),
+        "profit_factor": round(profit_factor, 2) if profit_factor is not None else None,
+        "max_drawdown_pct": round(max_dd, 2),
+    }
+
+
 class BacktestEngine:
     """
     과거 데이터를 LangGraph 파이프라인에 밀어 넣는 시뮬레이터.
@@ -47,36 +97,74 @@ class BacktestEngine:
 
     def __init__(
         self,
-        data_paths: List[str],
+        data_paths: Optional[List[str]] = None,
         symbol: str = "EURUSD",
         timeframes: List[str] = None,
+        dfs: Optional[Dict[str, pd.DataFrame]] = None,
+        data_metadata: Optional[Dict[str, Dict[str, Any]]] = None,
         initial_balance: float = DEFAULT_INITIAL_BALANCE,
         risk_per_trade_pct: float = DEFAULT_RISK_PER_TRADE_PCT,
         step_interval: int = STEP_INTERVAL,
     ):
-        self.data_paths = data_paths
+        self.data_paths = data_paths or []
         self.symbol = symbol
-        self.timeframes = timeframes if timeframes else ["M5"]
+        self.timeframes = [tf.strip().upper() for tf in (timeframes if timeframes else ["M5"])]
         self.initial_balance = initial_balance
         self.balance = initial_balance
         self.risk_per_trade_pct = risk_per_trade_pct
         self.step_interval = step_interval
 
         # 전체 과거 데이터 로드
-        self.dfs = {}
-        for path, tf in zip(self.data_paths, self.timeframes):
-            df = pd.read_csv(path.strip(), parse_dates=["time"])
-            self.dfs[tf] = df
-            print(f"📂 데이터 로드 완료 ({tf}): {len(df)}개 캔들 ({df['time'].iloc[0]} ~ {df['time'].iloc[-1]})")
+        self.dfs = dfs or {}
+        if self.dfs:
+            for tf in self.timeframes:
+                df = self.dfs[tf]
+                print(f"📂 데이터 로드 완료 ({tf}): {len(df)}개 캔들 ({df['time'].iloc[0]} ~ {df['time'].iloc[-1]})")
+        else:
+            for path, tf in zip(self.data_paths, self.timeframes):
+                df = pd.read_csv(path.strip(), parse_dates=["time"])
+                self.dfs[tf] = df
+                print(f"📂 CSV 데이터 로드 완료 ({tf}): {len(df)}개 캔들 ({df['time'].iloc[0]} ~ {df['time'].iloc[-1]})")
             
         # 가장 작은 타임프레임을 루프 기준으로 설정 (보통 리스트의 첫 번째 값)
         self.base_tf = self.timeframes[0]
+        if self.base_tf not in self.dfs:
+            raise ValueError(f"Base timeframe data is missing: {self.base_tf}")
         self.df_base = self.dfs[self.base_tf]
+        self.data_metadata = data_metadata or {
+            tf: calculate_candle_quality(df) for tf, df in self.dfs.items()
+        }
 
         # 결과 기록
         self.trades: List[Dict[str, Any]] = []
+        self.decisions: List[Dict[str, Any]] = []
         self.equity_curve: List[Dict[str, Any]] = []
         self.open_position: Optional[Dict[str, Any]] = None
+
+    def _record_decision(
+        self,
+        current_time: Any,
+        action: str,
+        status: str,
+        final_state: Optional[Dict[str, Any]] = None,
+        rejection_reason: Optional[str] = None,
+        final_order: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        final_state = final_state or {}
+        strategy_hypothesis = final_state.get("strategy_hypothesis", {}) or {}
+        tech_summary = final_state.get("tech_summary", {}) or {}
+        self.decisions.append(
+            {
+                "decision_time": str(current_time),
+                "action": str(action).upper(),
+                "strategy": strategy_hypothesis.get("selected_strategy"),
+                "market_regime": tech_summary.get("market_regime") or strategy_hypothesis.get("market_condition"),
+                "status": status,
+                "rejection_reason": rejection_reason,
+                "indicator_snapshot": final_state.get("indicator_data", {}),
+                "final_order": final_order or final_state.get("final_order", {}),
+            }
+        )
 
     def _build_mock_ohlcv(self, window: pd.DataFrame) -> pd.DataFrame:
         """과거 데이터의 특정 윈도우를 fetch_ohlcv가 반환하는 형태로 가공합니다."""
@@ -259,17 +347,20 @@ class BacktestEngine:
                     # 결과 분석
                     if final_state.get("error_flag"):
                         print(f"   ⚠️ 에러 발생: {final_state.get('error_message', 'Unknown')}")
+                        self._record_decision(current_time, "ERROR", "ERROR", final_state, final_state.get("error_message"))
                         continue
 
                     final_order = _model_to_dict(final_state.get("final_order"))
                     if not final_order:
                         print("   📊 매매 신호 없음 (Tech Analyst가 시장 비적합 판단)")
+                        self._record_decision(current_time, "SKIP", "SKIP", final_state)
                         self.equity_curve.append({"time": str(current_time), "balance": self.balance, "action": "SKIP"})
                         continue
 
                     action = final_order.get("action", "HOLD")
                     if action.upper() in ("HOLD", "WAIT"):
                         print(f"   🛑 Chief Trader 판단: {action}")
+                        self._record_decision(current_time, action, "HOLD", final_state, final_order=final_order)
                         self.equity_curve.append({"time": str(current_time), "balance": self.balance, "action": action})
                         continue
 
@@ -282,6 +373,14 @@ class BacktestEngine:
                             f"   ⛔ 가드레일: SL/TP 방향 또는 손익비 오류 "
                             f"(action={action}, entry={entry_price:.5f}, sl={sl:.5f}, tp={tp:.5f})"
                         )
+                        self._record_decision(
+                            current_time,
+                            action,
+                            "REJECTED",
+                            final_state,
+                            "invalid SL/TP direction or risk/reward",
+                            final_order,
+                        )
                         self.equity_curve.append({"time": str(current_time), "balance": self.balance, "action": "REJECTED"})
                         continue
                     setup_ok, setup_reason = validate_strategy_setup(
@@ -293,6 +392,7 @@ class BacktestEngine:
                     )
                     if not setup_ok:
                         print(f"   ⛔ 전략 검증 실패: {setup_reason}")
+                        self._record_decision(current_time, action, "REJECTED", final_state, setup_reason, final_order)
                         self.equity_curve.append({"time": str(current_time), "balance": self.balance, "action": "REJECTED"})
                         continue
 
@@ -302,6 +402,7 @@ class BacktestEngine:
 
                     if lot_size <= 0:
                         print(f"   ⛔ 가드레일: 랏 사이즈 0 (SL 거리 이상)")
+                        self._record_decision(current_time, action, "REJECTED", final_state, "lot size calculated to <= 0", final_order)
                         continue
 
                     trade_record = {
@@ -326,7 +427,12 @@ class BacktestEngine:
                         "timestamp": datetime.now().isoformat(),
                     }
                     trade_record["decision_context"] = build_decision_context(final_state, order_result)
+                    strategy_hypothesis = final_state.get("strategy_hypothesis", {}) or {}
+                    tech_summary = final_state.get("tech_summary", {}) or {}
+                    trade_record["strategy"] = strategy_hypothesis.get("selected_strategy")
+                    trade_record["market_regime"] = tech_summary.get("market_regime") or strategy_hypothesis.get("market_condition")
                     self.open_position = trade_record
+                    self._record_decision(current_time, action, "OPENED", final_state, final_order=final_order)
                     self.equity_curve.append({"time": str(current_time), "balance": self.balance, "action": action})
                     print(f"   📌 {action} opened @ {entry_price:.5f} | SL: {sl:.5f} | TP: {tp:.5f}")
 
@@ -348,7 +454,10 @@ class BacktestEngine:
 
 def main():
     parser = argparse.ArgumentParser(description="Agentic Backtest Runner")
-    parser.add_argument("--data", type=str, required=True, help="콤마로 구분된 데이터 파일 경로들 (예: file1.csv,file2.csv)")
+    parser.add_argument("--data", type=str, help="Deprecated: 콤마로 구분된 CSV 데이터 파일 경로들")
+    parser.add_argument("--data-db", type=str, default=DEFAULT_BACKTEST_DB_PATH, help="SQLite market data DB path")
+    parser.add_argument("--from", dest="from_date", type=str, help="백테스트 시작일 (YYYY-MM-DD)")
+    parser.add_argument("--to", dest="to_date", type=str, help="백테스트 종료일 (YYYY-MM-DD)")
     parser.add_argument("--symbol", type=str, default="EURUSD", help="종목 코드 (기본: EURUSD)")
     parser.add_argument("--timeframes", type=str, default="M5", help="콤마로 구분된 타임프레임 (예: M5,H1)")
     parser.add_argument("--balance", type=float, default=DEFAULT_INITIAL_BALANCE, help="초기 잔고 (기본: 10000)")
@@ -357,31 +466,55 @@ def main():
     parser.add_argument("--report", action="store_true", help="백테스트 완료 후 리포트 자동 생성")
     args = parser.parse_args()
 
-    data_paths = args.data.split(",")
-    timeframes = args.timeframes.split(",")
-    
-    if len(data_paths) != len(timeframes):
-        print(f"❌ 데이터 파일 수({len(data_paths)})와 타임프레임 수({len(timeframes)})가 일치해야 합니다.")
-        sys.exit(1)
+    data_paths = [path.strip() for path in args.data.split(",")] if args.data else []
+    timeframes = [tf.strip().upper() for tf in args.timeframes.split(",") if tf.strip()]
+    dfs = None
+    data_metadata = None
+    data_from = args.from_date
+    data_to = args.to_date
 
-    for path in data_paths:
-        if not os.path.exists(path.strip()):
-            print(f"❌ 데이터 파일을 찾을 수 없습니다: {path.strip()}")
+    if data_paths:
+        print("⚠️ --data CSV input is deprecated. Prefer --data-db with --from/--to.")
+        if len(data_paths) != len(timeframes):
+            print(f"❌ 데이터 파일 수({len(data_paths)})와 타임프레임 수({len(timeframes)})가 일치해야 합니다.")
+            sys.exit(1)
+        for path in data_paths:
+            if not os.path.exists(path.strip()):
+                print(f"❌ 데이터 파일을 찾을 수 없습니다: {path.strip()}")
+                sys.exit(1)
+    else:
+        if not args.from_date or not args.to_date:
+            print("❌ SQLite 백테스트에는 --from YYYY-MM-DD 및 --to YYYY-MM-DD가 필요합니다.")
+            sys.exit(1)
+        try:
+            dfs, data_metadata = load_backtest_data_from_sqlite(
+                args.data_db,
+                args.symbol,
+                timeframes,
+                args.from_date,
+                args.to_date,
+            )
+        except ValueError as exc:
+            print(f"❌ {exc}")
             sys.exit(1)
 
     engine = BacktestEngine(
         data_paths=data_paths,
         symbol=args.symbol,
         timeframes=timeframes,
+        dfs=dfs,
+        data_metadata=data_metadata,
         initial_balance=args.balance,
         risk_per_trade_pct=args.risk_pct,
         step_interval=args.step,
     )
 
     trades = engine.run()
+    run_id = f"{args.symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    report_archive: Optional[Dict[str, Any]] = None
 
     if args.report and trades:
-        from backend.features.trading.reporting import generate_backtest_report
+        from backend.features.trading.reporting import generate_backtest_report, _summarize_decisions
         report_path = generate_backtest_report(
             trades=trades,
             equity_curve=engine.equity_curve,
@@ -393,10 +526,69 @@ def main():
             decision_timeframes=engine.timeframes,
             step_interval=engine.step_interval,
             risk_per_trade_pct=engine.risk_per_trade_pct,
+            data_quality=engine.data_metadata,
+            decisions=engine.decisions,
         )
         print(f"\n📄 리포트 생성 완료: {report_path}")
+        try:
+            with open(report_path, "r", encoding="utf-8") as f:
+                report_body = f.read()
+            chart_path = None
+            if "![Backtest Chart](./" in report_body:
+                start = report_body.find("![Backtest Chart](./") + len("![Backtest Chart](./")
+                end = report_body.find(")", start)
+                if end != -1:
+                    chart_rel = report_body[start:end]
+                    chart_path = os.path.join(os.path.dirname(report_path), chart_rel)
+            report_archive = {
+                "report_id": os.path.splitext(os.path.basename(report_path))[0],
+                "run_id": run_id,
+                "symbol": args.symbol,
+                "report_path": report_path,
+                "markdown_body": report_body,
+                "chart_path": chart_path,
+                "report_created_at": datetime.now().isoformat(),
+                "summary_json": {
+                    "chart_timeframe": engine.base_tf,
+                    "decision_timeframes": engine.timeframes,
+                    "step_interval": engine.step_interval,
+                    "risk_per_trade_pct": engine.risk_per_trade_pct,
+                    "data_quality": engine.data_metadata,
+                    "decision_summary": _summarize_decisions(engine.decisions),
+                },
+            }
+        except OSError as exc:
+            print(f"⚠️ SQLite report archive failed: {exc}")
     elif args.report and not trades:
         print("\n⚠️ 매매 기록이 없어 리포트를 생성하지 않습니다.")
+
+    stats = _calculate_run_statistics(trades, args.balance, engine.balance)
+    if data_from is None:
+        data_from = engine.df_base["time"].iloc[0].strftime("%Y-%m-%d %H:%M:%S")
+    if data_to is None:
+        data_to = engine.df_base["time"].iloc[-1].strftime("%Y-%m-%d %H:%M:%S")
+    persist_backtest_result(
+        args.data_db,
+        run={
+            "run_id": run_id,
+            "symbol": args.symbol,
+            "timeframes": timeframes,
+            "base_timeframe": engine.base_tf,
+            "data_from": data_from,
+            "data_to": data_to,
+            "initial_balance": args.balance,
+            "final_balance": engine.balance,
+            "risk_per_trade_pct": engine.risk_per_trade_pct,
+            "step_interval": engine.step_interval,
+            "total_trades": len(trades),
+            **stats,
+        },
+        trades=trades,
+        decisions=engine.decisions,
+    )
+    print(f"💾 SQLite 백테스트 결과 저장: {args.data_db} (run_id={run_id})")
+    if report_archive:
+        store_backtest_report(args.data_db, **report_archive)
 
     # JSON으로도 원본 데이터 저장
     if trades:
@@ -406,15 +598,19 @@ def main():
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump({
                 "symbol": args.symbol,
+                "run_id": run_id,
                 "initial_balance": args.balance,
                 "final_balance": engine.balance,
                 "data_paths": [path.strip() for path in data_paths],
+                "data_db": args.data_db,
+                "data_quality": engine.data_metadata,
                 "timeframes": timeframes,
                 "base_timeframe": engine.base_tf,
                 "step_interval": engine.step_interval,
                 "risk_per_trade_pct": engine.risk_per_trade_pct,
                 "total_trades": len(trades),
                 "trades": trades,
+                "decisions": engine.decisions,
                 "equity_curve": engine.equity_curve,
             }, f, indent=2, ensure_ascii=False)
         print(f"💾 원본 결과 JSON 저장: {json_path}")

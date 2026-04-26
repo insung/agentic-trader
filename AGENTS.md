@@ -22,7 +22,7 @@
 5. `git status --short`
 6. `git log --oneline -5`
 7. 테스트 작업이면 `docs/testing-guide.md`
-8. 백테스트/운영 작업이면 `docs/execution-guide.md`, `docs/live-operation-runbook.md`
+8. 백테스트/운영 작업이면 `docs/backtesting-guide.md`, `docs/execution-guide.md`, `docs/live-operation-runbook.md`
 9. 전략 작업이면 `docs/trading-strategies/`, `backend/config/strategies_config.json`, `backend/features/trading/strategy_validators.py`
 
 도구별 지침:

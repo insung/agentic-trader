@@ -2,7 +2,7 @@
 MT5 과거 데이터 수집 스크립트
 =============================
 MT5 터미널에 연결하여 지정한 심볼·기간의 과거 OHLCV 데이터를
-CSV 파일로 저장합니다.
+SQLite DB에 저장합니다.
 
 사용법 (Wine Python 환경에서):
     python -m backend.scripts.fetch_history --symbol EURUSD --timeframes H1 --days 30
@@ -22,6 +22,12 @@ except ImportError:
     mt5 = None
 
 from backend.features.trading.mt5_adapter import TIMEFRAME_MAP
+from backend.features.trading.backtest_store import (
+    DEFAULT_BACKTEST_DB_PATH,
+    create_import_batch,
+    update_import_batch_status,
+    upsert_candles,
+)
 
 # 기본 저장 경로
 DEFAULT_OUTPUT_DIR = os.path.join(
@@ -46,10 +52,12 @@ def fetch_and_save(
     days: Optional[int] = None, 
     from_date: Optional[str] = None, 
     to_date: Optional[str] = None,
-    output_dir: str = DEFAULT_OUTPUT_DIR
+    output_dir: str = DEFAULT_OUTPUT_DIR,
+    db_path: str = DEFAULT_BACKTEST_DB_PATH,
+    import_batch_id: Optional[int] = None,
 ) -> str:
     """
-    MT5에서 과거 데이터를 조회하여 CSV로 저장합니다.
+    MT5에서 과거 데이터를 조회하여 SQLite로 저장합니다.
     """
     if mt5 is None:
         print("❌ MetaTrader5 패키지를 찾을 수 없습니다. Wine Python 환경에서 실행하세요.")
@@ -99,15 +107,11 @@ def fetch_and_save(
         print(f"   브로커 서버에 해당 과거 데이터({timeframe_str})가 다운로드되어 있지 않을 수 있습니다.")
         print(f"   터미널에서 수동으로 스크롤하여 데이터를 로드하거나 다른 날짜/타임프레임을 시도하세요.")
 
-    # 저장
-    os.makedirs(output_dir, exist_ok=True)
-    filename = build_history_filename(symbol, timeframe_str, utc_from, utc_to)
-    filepath = os.path.join(output_dir, filename)
-    df.to_csv(filepath, index=False)
+    saved_count = upsert_candles(db_path, symbol, timeframe_str, df, import_batch_id=import_batch_id)
 
-    print(f"✅ {len(df)}개 캔들 저장 완료: {filepath}")
+    print(f"✅ {saved_count}개 캔들 SQLite 저장 완료: {db_path} ({symbol} {timeframe_str})")
     mt5.shutdown()
-    return filepath
+    return db_path
 
 
 def main():
@@ -118,18 +122,35 @@ def main():
     parser.add_argument("--from", dest="from_date", type=str, help="시작일 (YYYY-MM-DD)")
     parser.add_argument("--to", dest="to_date", type=str, help="종료일 (YYYY-MM-DD)")
     parser.add_argument("--output-dir", type=str, default=DEFAULT_OUTPUT_DIR, help="저장 디렉토리")
+    parser.add_argument("--data-db", type=str, default=DEFAULT_BACKTEST_DB_PATH, help="SQLite market data DB path")
     args = parser.parse_args()
 
     timeframes = [tf.strip() for tf in args.timeframes.split(",")]
-    for tf in timeframes:
-        fetch_and_save(
-            args.symbol, 
-            tf, 
-            args.days, 
-            args.from_date, 
-            args.to_date, 
-            args.output_dir
-        )
+    requested_from = args.from_date or f"last_{args.days or 30}_days"
+    requested_to = args.to_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    batch_id = create_import_batch(
+        args.data_db,
+        symbol=args.symbol,
+        timeframes=timeframes,
+        requested_from=requested_from,
+        requested_to=requested_to,
+    )
+    try:
+        for tf in timeframes:
+            fetch_and_save(
+                args.symbol,
+                tf,
+                args.days,
+                args.from_date,
+                args.to_date,
+                args.output_dir,
+                db_path=args.data_db,
+                import_batch_id=batch_id,
+            )
+        update_import_batch_status(args.data_db, batch_id, "success")
+    except BaseException as exc:
+        update_import_batch_status(args.data_db, batch_id, "failed", str(exc))
+        raise
 
 
 if __name__ == "__main__":

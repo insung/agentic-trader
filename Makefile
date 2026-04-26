@@ -1,4 +1,4 @@
-.PHONY: test run run-wine trigger reconcile cli install venv
+.PHONY: test run run-wine trigger reconcile cli install venv migrate-legacy-data
 
 # 기본 환경 변수 설정
 export PYTHONPATH := .
@@ -8,6 +8,8 @@ PORT ?= 8001
 WINEPREFIX ?= $(HOME)/.wine
 MODE ?= paper
 RISK_PCT ?= 0.005
+DATA_DB ?= backtests/data/market_data.sqlite
+TRADING_LOG_DB ?= trading_logs/trading_logs.sqlite
 
 venv:
 	@echo "Checking virtual environment..."
@@ -65,14 +67,24 @@ backtest-fetch:
 		--timeframes $(TIMEFRAMES) \
 		--days $(DAYS) \
 		--from "$(FROM)" \
-		--to "$(TO)"
+		--to "$(TO)" \
+		--data-db "$(DATA_DB)"
 
-# 백테스트 실행 (DATA 변수에 콤마로 구분된 여러 CSV 경로 지정 가능)
-# 예: make backtest-run DATA=backtests/data/EURUSD_20250101-20250131_M15.csv,backtests/data/EURUSD_20250101-20250131_M30.csv TIMEFRAMES=M15,M30
+# 백테스트 실행 (기본: SQLite, 호환: DATA 변수에 콤마로 구분된 CSV 경로 지정 가능)
+# 예: make backtest-run SYMBOL=BTCUSD TIMEFRAMES=M15,M30 FROM=2025-01-01 TO=2025-02-28
 backtest-run: venv
-	@if [ -z "$(DATA)" ]; then echo "DATA is required. Example: make backtest-run DATA=backtests/data/EURUSD_20250101-20250131_M15.csv"; exit 1; fi
-	@echo "Running agentic backtest using data: $(DATA)..."
-	$(VENV_BIN)/python -m backend.scripts.run_backtest --data $(DATA) --symbol $(SYMBOL) --timeframes $(TIMEFRAMES) --risk-pct $(RISK_PCT) --step $(STEP) --report
+	@if [ -n "$(DATA)" ]; then \
+		echo "Running agentic backtest using legacy CSV data: $(DATA)..."; \
+		$(VENV_BIN)/python -m backend.scripts.run_backtest --data "$(DATA)" --data-db "$(DATA_DB)" --symbol $(SYMBOL) --timeframes $(TIMEFRAMES) --risk-pct $(RISK_PCT) --step $(STEP) --report; \
+	else \
+		if [ -z "$(FROM)" ] || [ -z "$(TO)" ]; then echo "FROM and TO are required for SQLite backtests. Example: make backtest-run SYMBOL=BTCUSD TIMEFRAMES=M15,M30 FROM=2025-01-01 TO=2025-02-28"; exit 1; fi; \
+		echo "Running agentic backtest from SQLite $(DATA_DB) ($(FROM) ~ $(TO))..."; \
+		$(VENV_BIN)/python -m backend.scripts.run_backtest --data-db "$(DATA_DB)" --symbol $(SYMBOL) --timeframes $(TIMEFRAMES) --from "$(FROM)" --to "$(TO)" --risk-pct $(RISK_PCT) --step $(STEP) --report; \
+	fi
+
+migrate-legacy-data: venv
+	@echo "Migrating legacy backtest/trading log artifacts into SQLite..."
+	$(VENV_BIN)/python -m backend.scripts.migrate_legacy_data --backtest-db "$(DATA_DB)" --trading-log-db "$(TRADING_LOG_DB)"
 
 # 백테스트 데이터 및 결과 정리
 backtest-clean:

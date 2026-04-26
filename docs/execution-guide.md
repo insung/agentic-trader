@@ -1,13 +1,13 @@
 # Execution Guide
 
-이 문서는 Agentic Trader를 로컬에서 실행하고, Paper/Live 트레이딩 파이프라인과 agentic backtest를 구동하는 절차를 정리합니다. 테스트 절차는 [testing-guide.md](./testing-guide.md)를 참고하십시오.
+이 문서는 Agentic Trader를 로컬에서 실행하고, Paper/Live 트레이딩 파이프라인을 구동하는 절차를 정리합니다. 테스트 절차는 [testing-guide.md](./testing-guide.md), 백테스트 절차는 [backtesting-guide.md](./backtesting-guide.md)를 참고하십시오.
 
 ## Prerequisites
 
 1. **MetaTrader 5:** 실제 시장 데이터와 live 주문 검증에는 Wine 환경의 MT5 터미널이 필요합니다.
 2. **Algorithmic trading:** MT5의 `[도구] -> [옵션] -> [전문가 조언자]`에서 알고리즘 매매를 허용해야 합니다.
 3. **Dependencies:** 처음 실행하는 환경에서는 `make install`을 실행합니다.
-4. **API key:** LLM 노드가 실제 호출되는 실행/백테스트에는 Google GenAI API 키가 필요합니다.
+4. **API key:** LLM 노드가 실제 호출되는 실행에는 Google GenAI API 키가 필요합니다.
 
 ## Start Backend
 
@@ -60,8 +60,8 @@ CLI는 심볼, 타임프레임, paper/live 모드를 선택하고 `/api/v1/trade
 4. Chief Trader Decision: BUY/SELL/HOLD 결정
 5. Guardrails and Strategy Gate: SL/TP, risk/reward, ATR, EMA/ADX/Bollinger 조건 검증
 6. Execution: Paper 또는 live 주문 전송
-7. Position Tracking: `trading_logs/tracked_positions.json` 기록
-8. Post-Close Review: 청산 후 `trading_logs/review_*.md` 생성
+7. Position Tracking: 로컬 파일과 `trading_logs/trading_logs.sqlite`에 열린 포지션 기록
+8. Post-Close Review: 청산 후 `trading_logs/review_*.md` 및 SQLite `trade_reviews` 기록
 
 ## Reconcile Closed Positions
 
@@ -89,44 +89,7 @@ curl -X POST http://localhost:8001/api/v1/trade/reconcile
 
 백테스트는 실제 LangGraph agent pipeline을 과거 데이터 위에서 실행합니다. 단순 룰 백테스트가 아니라 각 step에서 LLM 판단, Python guardrail, deterministic strategy gate를 함께 검증합니다.
 
-### How It Works
-
-1. 최근 100개 캔들 window만 AI에게 제공하여 미래 데이터를 보지 못하게 합니다.
-2. 백테스터가 MT5 함수 호출을 과거 캔들 기준으로 가로챕니다.
-3. 포지션이 열리면 새 AI 판단을 중단하고 SL/TP 청산 여부만 추적합니다.
-4. 포지션이 TP/SL 또는 `BACKTEST_END`로 닫힌 뒤에만 Risk Reviewer 복기를 생성합니다.
-
-### Step Interval
-
-- 첫 100개 캔들은 lookback context로만 사용합니다.
-- 기본 `STEP=5`는 5캔들마다 한 번 AI 판단을 실행합니다.
-- 빠른 디버깅은 `STEP=20`, 최종 검증은 `STEP=5`를 권장합니다.
-
-### Fetch Historical Data
-
-```bash
-make backtest-fetch SYMBOL=BTCUSD FROM=2025-01-01 TO=2025-01-07 TIMEFRAMES=M15,M30
-```
-
-데이터는 `backtests/data/`에 저장되며 파일명은 `SYMBOL_YYYYMMDD-YYYYMMDD_TIMEFRAME.csv` 형식입니다.
-
-### Run Backtest
-
-```bash
-make backtest-run \
-  DATA=backtests/data/BTCUSD_20250101-20250107_M15.csv,backtests/data/BTCUSD_20250101-20250107_M30.csv \
-  SYMBOL=BTCUSD \
-  TIMEFRAMES=M15,M30 \
-  STEP=20 \
-  RISK_PCT=0.005
-```
-
-결과 위치:
-
-- Markdown report: `backtests/reports/backtest_<SYMBOL>_*.md`
-- Chart image: `backtests/reports/chart_<SYMBOL>_*.png`
-- Raw JSON: `backtests/results/backtest_<SYMBOL>_*.json`
-- Post-close reviews: `trading_logs/review_*.md`
+실행 체크리스트, `make backtest-fetch`, `make backtest-run`, `RISK_PCT`, 여러 달 기간 조회, 결과 확인 방법은 [backtesting-guide.md](./backtesting-guide.md)를 기준 문서로 관리합니다. SQLite 저장소 구조와 조회 쿼리는 [sqlite-storage.md](./sqlite-storage.md)를 참고하십시오.
 
 ## Strategy Changes
 

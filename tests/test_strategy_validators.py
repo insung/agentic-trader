@@ -29,6 +29,65 @@ def _snapshot(**latest_overrides):
     }
 
 
+def _ma_mtf_snapshot(action="BUY", m30_conflict=False, **m15_overrides):
+    if action == "SELL":
+        m15_latest = {
+            "close": 96.0,
+            "open": 97.0,
+            "high": 98.0,
+            "low": 95.0,
+            "ema20": 98.0,
+            "ema50": 99.0,
+            "atr14": 10.0,
+            "adx14": 30.0,
+            "bb_upper20": 110.0,
+            "bb_lower20": 90.0,
+            "rsi14": 42.0,
+        }
+        m30_latest = {
+            "close": 101.0 if m30_conflict else 96.0,
+            "ema20": 100.0 if m30_conflict else 98.0,
+            "ema50": 99.0,
+            "adx14": 28.0,
+        }
+        cross_ages = {"bullish": None, "bearish": 0}
+    else:
+        m15_latest = {
+            "close": 104.0,
+            "open": 103.0,
+            "high": 105.0,
+            "low": 102.0,
+            "ema20": 102.0,
+            "ema50": 101.0,
+            "atr14": 10.0,
+            "adx14": 30.0,
+            "bb_upper20": 110.0,
+            "bb_lower20": 90.0,
+            "rsi14": 58.0,
+        }
+        m30_latest = {
+            "close": 99.0 if m30_conflict else 104.0,
+            "ema20": 100.0 if m30_conflict else 102.0,
+            "ema50": 101.0,
+            "adx14": 28.0,
+        }
+        cross_ages = {"bullish": 0, "bearish": None}
+
+    m15_latest.update(m15_overrides)
+    return {
+        "M15": {
+            "latest": m15_latest,
+            "ema_cross_age_bars": cross_ages,
+            "recent_rows": [],
+        },
+        "M30": {
+            "latest": m30_latest,
+            "ema_cross_age_bars": {"bullish": None, "bearish": None},
+            "recent_rows": [],
+        },
+    }
+
+
 def test_ma_crossover_requires_recent_cross_and_atr_sized_stop():
     ok, reason = validate_strategy_setup(
         "BUY",
@@ -62,6 +121,61 @@ def test_ma_crossover_blocks_stale_or_absent_cross():
     )
     assert not ok
     assert "stale" in reason
+
+
+def test_ma_crossover_blocks_higher_timeframe_conflict():
+    ok, reason = validate_strategy_setup(
+        "SELL",
+        96.0,
+        107.0,
+        {"selected_strategy": "Moving Average Crossover"},
+        _ma_mtf_snapshot("SELL", m30_conflict=True),
+    )
+    assert not ok
+    assert "higher timeframe bullish conflict" in reason
+
+    ok, reason = validate_strategy_setup(
+        "BUY",
+        104.0,
+        93.0,
+        {"selected_strategy": "Moving Average Crossover"},
+        _ma_mtf_snapshot("BUY", m30_conflict=True),
+    )
+    assert not ok
+    assert "higher timeframe bearish conflict" in reason
+
+
+def test_ma_crossover_allows_aligned_multi_timeframe_setup():
+    ok, reason = validate_strategy_setup(
+        "SELL",
+        96.0,
+        107.0,
+        {"selected_strategy": "Moving Average Crossover"},
+        _ma_mtf_snapshot("SELL"),
+    )
+    assert ok, reason
+
+
+def test_ma_crossover_blocks_exhausted_band_entries():
+    ok, reason = validate_strategy_setup(
+        "SELL",
+        96.0,
+        107.0,
+        {"selected_strategy": "Moving Average Crossover"},
+        _ma_mtf_snapshot("SELL", close=90.2, rsi14=31.0, bb_lower20=90.0),
+    )
+    assert not ok
+    assert "oversold lower-band exhaustion" in reason
+
+    ok, reason = validate_strategy_setup(
+        "BUY",
+        104.0,
+        93.0,
+        {"selected_strategy": "Moving Average Crossover"},
+        _ma_mtf_snapshot("BUY", close=109.8, rsi14=70.0, bb_upper20=110.0),
+    )
+    assert not ok
+    assert "overbought upper-band exhaustion" in reason
 
 
 def test_bollinger_short_blocks_unresolved_uptrend_without_overbought_rsi():

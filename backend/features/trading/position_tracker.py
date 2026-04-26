@@ -11,6 +11,14 @@ from typing import Any, Dict, List, Optional
 
 from backend.core.state_models import AgentStateSchema
 from backend.workflows.nodes import risk_reviewer_node
+from backend.features.trading.trading_log_store import (
+    DEFAULT_TRADING_LOG_DB_PATH,
+    load_reviewed_trade_ids as load_reviewed_trade_ids_sqlite,
+    load_tracked_positions as load_tracked_positions_sqlite,
+    mark_trade_reviewed as mark_trade_reviewed_sqlite,
+    replace_reviewed_trade_ids,
+    replace_tracked_positions,
+)
 from backend.features.trading.mt5_adapter import (
     get_current_price,
     get_deals_history,
@@ -22,6 +30,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(o
 TRADING_LOGS_DIR = os.path.join(PROJECT_ROOT, "trading_logs")
 TRACKED_POSITIONS_PATH = os.path.join(TRADING_LOGS_DIR, "tracked_positions.json")
 REVIEWED_TRADES_PATH = os.path.join(TRADING_LOGS_DIR, "reviewed_trades.json")
+TRADING_LOG_DB_PATH = DEFAULT_TRADING_LOG_DB_PATH
 
 
 def _read_json(path: str, default: Any) -> Any:
@@ -43,15 +52,22 @@ def _write_json(path: str, data: Any) -> None:
 
 
 def load_tracked_positions() -> List[Dict[str, Any]]:
-    return _read_json(TRACKED_POSITIONS_PATH, [])
+    positions = _read_json(TRACKED_POSITIONS_PATH, None)
+    if positions is not None:
+        return positions
+    return load_tracked_positions_sqlite(TRADING_LOG_DB_PATH)
 
 
 def save_tracked_positions(positions: List[Dict[str, Any]]) -> None:
     _write_json(TRACKED_POSITIONS_PATH, positions)
+    replace_tracked_positions(TRADING_LOG_DB_PATH, positions)
 
 
 def load_reviewed_trade_ids() -> List[str]:
-    return _read_json(REVIEWED_TRADES_PATH, [])
+    reviewed = _read_json(REVIEWED_TRADES_PATH, None)
+    if reviewed is not None:
+        return reviewed
+    return load_reviewed_trade_ids_sqlite(TRADING_LOG_DB_PATH)
 
 
 def mark_trade_reviewed(trade_id: str) -> None:
@@ -59,6 +75,7 @@ def mark_trade_reviewed(trade_id: str) -> None:
     if trade_id not in reviewed:
         reviewed.append(trade_id)
         _write_json(REVIEWED_TRADES_PATH, reviewed)
+        mark_trade_reviewed_sqlite(TRADING_LOG_DB_PATH, trade_id)
 
 
 def _dump_if_model(value: Any) -> Any:

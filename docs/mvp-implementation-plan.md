@@ -84,6 +84,7 @@ agentic-trader/
         *   Trade #1, #2: SL 거리가 ATR14 대비 너무 좁음.
         *   Trade #3: Bollinger Double Bottom 조건 미충족.
         *   Trade #4: Bollinger Double Top 조건 및 상승 추세 해소 조건 미충족.
+    *   `backtests/reports/backtest_BTCUSD_20260426_105318.md`의 2025-01-15 14:00 SELL 손실은 M15 데드크로스가 맞더라도 M30이 상승 정렬을 유지한 상위 타임프레임 충돌로 확인되어, MA Crossover validator에 MTF confirmation과 RSI/Bollinger exhaustion 차단을 추가했습니다.
     *   관련 단위 테스트: `tests/test_strategy_validators.py`, `tests/test_guardrails.py`.
 
 ---
@@ -93,7 +94,7 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
 
 ### 현재 부족한 부분 요약 (2026-04 기준)
 *   **백테스트 속도와 재현성:** 현재 백테스트는 각 Step마다 LangGraph와 LLM을 호출하므로 느리고, 같은 데이터라도 LLM 응답/외부 API 상태에 따라 결과가 흔들릴 수 있습니다. 빠른 반복 실험을 위해 LLM 응답 캐시, deterministic replay, `--from/--to`, `--max-steps` 같은 부분 실행 옵션이 필요합니다.
-*   **성과 데이터의 구조화 부족:** 리포트는 사람이 읽기 좋지만, 전략별/기간별/타임프레임별 성과를 누적 비교하기에는 부족합니다. 모든 백테스트 결과를 SQLite 또는 Parquet에 저장하고, `strategy`, `symbol`, `timeframe`, `risk_pct`, `step`, `win_rate`, `profit_factor`, `max_drawdown`, `blocked_reason`을 쿼리할 수 있어야 합니다.
+*   **성과 데이터의 구조화 부족:** 리포트는 사람이 읽기 좋지만, 전략별/기간별/타임프레임별 성과를 누적 비교하기에는 아직 부족합니다. 백테스트 OHLCV와 실행 결과는 `backtests/data/market_data.sqlite`에 저장하기 시작했으며, 다음 단계는 `strategy`, `symbol`, `timeframe`, `risk_pct`, `step`, `win_rate`, `profit_factor`, `max_drawdown`, `blocked_reason` 기반의 비교 리포트를 강화하는 것입니다.
 *   **전략 검증은 시작 단계:** MA/Bollinger validator는 생겼지만, 아직 전략별 파라미터 튜닝, walk-forward 검증, out-of-sample 검증, 비용/스프레드/슬리피지 반영이 부족합니다. 현재 결과는 실제 체결 환경보다 낙관적일 수 있습니다.
 *   **운영 상태 저장이 취약:** 열린 포지션과 복기 상태가 로컬 JSON 중심이라 재시작/동시 실행/중복 처리에 취약합니다. 운영 단계에서는 SQLite 이상으로 옮겨 원자적 업데이트와 중복 방지를 보장해야 합니다.
 *   **세션 간 실행 기억 구조화 부족:** `AGENTS.md`를 Codex/Gemini/Antigravity 공통 SSOT로 정리했지만, 최근 실험 결과와 운영 지표는 아직 Markdown/JSON 중심입니다. 향후 SQLite/Vector DB 기반의 검색 가능한 기억 구조가 필요합니다.
@@ -111,7 +112,7 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
     *   완료된 Phase, 아직 부족한 점, 다음 목표를 기록합니다.
     *   큰 기능을 끝냈거나 중요한 방향 전환이 생기면 이 문서를 갱신합니다.
     *   새 세션은 `AGENTS.md` 다음으로 이 문서를 읽어 “지금 어디까지 왔는지”를 파악합니다.
-3.  **실험/운영 지식:** `trading_logs/`, `backtests/reports/`, 향후 `backtests/results/index.sqlite`
+3.  **실험/운영 지식:** `backtests/data/market_data.sqlite`, `trading_logs/trading_logs.sqlite`, `trading_logs/`, `backtests/reports/`
     *   개별 매매 복기, 백테스트 리포트, validator 차단 사유, 성과 통계는 여기에 축적합니다.
     *   향후에는 마크다운뿐 아니라 SQLite/Vector DB에 구조화하여, Chief Trader와 새 AI 세션이 검색 가능한 기억으로 사용합니다.
 
@@ -122,13 +123,13 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
 4.  `docs/mvp-implementation-plan.md`
 5.  최근 변경 확인: `git status --short`, `git log --oneline -5`
 6.  현재 작업이 테스트 관련이면 `docs/testing-guide.md`
-7.  백테스트/운영 관련이면 `docs/execution-guide.md`, `docs/live-operation-runbook.md`
+7.  백테스트/운영 관련이면 `docs/backtesting-guide.md`, `docs/execution-guide.md`, `docs/live-operation-runbook.md`
 8.  전략 관련이면 `docs/trading-strategies/`, `backend/config/strategies_config.json`, `backend/features/trading/strategy_validators.py`
 
 작업 종료 시 handoff 규칙:
 *   코드 변경이 있으면 테스트 명령과 결과를 최종 응답 및 관련 문서에 남깁니다.
 *   아키텍처 결정이나 반복될 교훈은 `docs/mvp-implementation-plan.md` 또는 `AGENTS.md`에 반영합니다.
-*   백테스트에서 나온 수치/차단 사유/결론은 리포트와 결과 DB에 남기고, 단순 대화 안에만 두지 않습니다.
+*   백테스트에서 나온 수치/차단 사유/결론은 리포트와 SQLite 결과 DB에 남기고, 단순 대화 안에만 두지 않습니다.
 *   “지금은 보류한 이유”도 기록합니다. 다음 세션이 같은 길을 다시 탐색하지 않게 하기 위함입니다.
 
 ### Phase 6: 운영 안정성 및 재시작 복구 강화 (예정)
@@ -136,17 +137,21 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
 *   **계획:**
     *   서버 시작 시 MT5 open positions와 `trading_logs/tracked_positions.json`을 대조하여 추적 상태를 자동 복구합니다.
     *   이미 열린 포지션이 있으면 동일 심볼/전략의 신규 진입을 가드레일에서 차단합니다.
-    *   현재 로컬 JSON 기반 상태 저장(`tracked_positions.json`, `reviewed_trades.json`)을 SQLite로 이전하여 원자적 업데이트, 중복 방지, 재시작 복구를 강화합니다.
+    *   [x] 현재 로컬 JSON 기반 상태 저장(`tracked_positions.json`, `reviewed_trades.json`)을 SQLite mirror(`trading_logs/trading_logs.sqlite`)와 병행 저장하여 검색 가능한 운영 로그를 축적합니다. 운영 원자성 강화와 JSON 완전 제거는 후속 과제로 둡니다.
     *   주문 실패, MT5 연결 끊김, LLM API 실패, reconcile 실패에 대한 재시도/백오프/알림 정책을 정의합니다.
     *   VPS 운영 runbook을 기준으로 데모 계좌에서 1주일 이상 연속 구동 검증을 수행합니다.
 
 ### Phase 6.5: 백테스트 엔진 속도, 캐시, 성과 DB 강화 (예정)
 *   **목표:** LLM 기반 백테스트를 빠르고 재현 가능하게 만들고, 결과를 누적 분석 가능한 데이터 자산으로 전환합니다.
 *   **계획:**
+    *   [x] 과거 OHLCV 데이터를 CSV 기본 저장에서 SQLite upsert 저장으로 전환합니다. `candles`는 `symbol + timeframe + time` 고유 키로 중복을 방지합니다.
+    *   [x] 백테스트 실행을 `symbol/timeframes/from/to` 기반 SQLite 기간 조회로 전환하고, 기존 CSV 입력은 임시 호환 경로로 유지합니다.
+    *   [x] 백테스트 실행 결과, 거래, validator 차단/HOLD 의사결정을 SQLite 테이블에 저장합니다.
+    *   [x] 기존 CSV/JSON/Markdown 산출물을 SQLite로 옮기는 `make migrate-legacy-data` 경로를 추가합니다.
     *   `run_backtest.py`에 `--from`, `--to`, `--max-steps`, `--no-review` 옵션을 추가하여 짧은 디버그 실행과 긴 검증 실행을 분리합니다.
     *   동일한 `(symbol, timeframes, candle_time, raw_data, prompt_version)` 조합의 LLM 응답을 캐시하여 반복 백테스트 비용과 시간을 줄입니다.
     *   LLM 호출 없이 저장된 의사결정 캐시를 재생하는 deterministic replay 모드를 추가합니다.
-    *   백테스트 결과 JSON을 SQLite/Parquet 인덱스로 적재하여 전략별 성과를 비교합니다.
+    *   SQLite 결과 테이블을 활용해 전략별 성과를 비교합니다.
     *   validator 차단 사유를 별도로 집계하여 “어떤 조건 때문에 거래가 줄었는지”를 분석합니다.
     *   스프레드, 수수료, 슬리피지, bid/ask 차이를 반영한 현실적인 체결 모델을 추가합니다.
 

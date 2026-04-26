@@ -75,12 +75,12 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant Runner as Backtest Runner (Python)
-    participant CSV as History Data (CSV)
+    participant DB as SQLite Market Data
     participant Graph as LangGraph Engine
     participant Mocker as MT5 Adapter Mocker
     participant Report as Reporting Module
 
-    Runner->>CSV: Load Historical Candles
+    Runner->>DB: Load Historical Candles by Symbol/TF/Date
     loop For each candle interval
         Runner->>Mocker: Inject Current Window Data
         Runner->>Graph: app.invoke(mocked_state)
@@ -91,6 +91,7 @@ sequenceDiagram
         Runner->>Graph: Run Risk Reviewer only when position closes
         Runner->>Runner: Record PnL & Equity
     end
+    Runner->>DB: Persist run, trades, decisions
     Runner->>Report: Generate Statistics & Chart
     Report-->>Runner: Save Markdown + PNG
 ```

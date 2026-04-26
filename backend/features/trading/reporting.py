@@ -4,6 +4,7 @@
 백테스트 결과를 통계 테이블, 차트 이미지, 마크다운 문서로 생성합니다.
 """
 import os
+from collections import Counter, defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -97,6 +98,39 @@ def _calculate_statistics(trades: List[Dict[str, Any]], initial_balance: float, 
     }
 
 
+def _summarize_decisions(decisions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Group backtest decision outcomes for report/DB summaries."""
+    by_status: Counter[str] = Counter()
+    by_action: Counter[str] = Counter()
+    by_regime: Counter[str] = Counter()
+    rejection_reasons: Counter[str] = Counter()
+    by_strategy: Dict[str, Counter[str]] = defaultdict(Counter)
+
+    for decision in decisions:
+        status = str(decision.get("status") or "UNKNOWN")
+        action = str(decision.get("action") or "UNKNOWN")
+        strategy = str(decision.get("strategy") or "N/A")
+        market_regime = str(decision.get("market_regime") or "N/A")
+
+        by_status[status] += 1
+        by_action[action] += 1
+        by_strategy[strategy][status] += 1
+        by_regime[market_regime] += 1
+
+        reason = decision.get("rejection_reason")
+        if status == "REJECTED" and reason:
+            rejection_reasons[str(reason)] += 1
+
+    return {
+        "total": len(decisions),
+        "by_status": dict(by_status),
+        "by_action": dict(by_action),
+        "by_strategy": {strategy: dict(counts) for strategy, counts in by_strategy.items()},
+        "by_market_regime": dict(by_regime),
+        "top_rejections": rejection_reasons.most_common(10),
+    }
+
+
 def _generate_chart(
     df: pd.DataFrame,
     trades: List[Dict[str, Any]],
@@ -179,6 +213,8 @@ def generate_backtest_report(
     decision_timeframes: Optional[List[str]] = None,
     step_interval: Optional[int] = None,
     risk_per_trade_pct: Optional[float] = None,
+    data_quality: Optional[Dict[str, Dict[str, Any]]] = None,
+    decisions: Optional[List[Dict[str, Any]]] = None,
     output_dir: str = DEFAULT_REPORT_DIR,
 ) -> str:
     """
@@ -188,6 +224,7 @@ def generate_backtest_report(
         생성된 마크다운 파일의 절대 경로.
     """
     stats = _calculate_statistics(trades, initial_balance, final_balance)
+    decision_summary = _summarize_decisions(decisions or [])
     chart_timeframe = chart_timeframe or _infer_timeframe_from_df(df)
     decision_timeframes = decision_timeframes or [chart_timeframe]
 
@@ -216,6 +253,18 @@ def generate_backtest_report(
             f.write(f"**거래당 리스크 한도**: {risk_per_trade_pct * 100:.2f}%  \n")
         f.write(f"**총 캔들 수**: {len(df)}  \n\n")
 
+        if data_quality:
+            f.write("## 데이터 품질 (Data Quality)\n\n")
+            f.write("| 타임프레임 | 캔들 수 | 중복 | 시작 | 종료 | 중앙 간격 | 최대 갭 |\n")
+            f.write("|------------|---------|------|------|------|-----------|---------|\n")
+            for tf, quality in data_quality.items():
+                f.write(
+                    f"| {tf} | {quality.get('candle_count', 0)} | {quality.get('duplicate_count', 0)} "
+                    f"| {quality.get('start_time') or 'N/A'} | {quality.get('end_time') or 'N/A'} "
+                    f"| {quality.get('median_interval') or 'N/A'} | {quality.get('max_gap') or 'N/A'} |\n"
+                )
+            f.write("\n")
+
         # 핵심 통계 테이블
         f.write("## 📈 성과 요약 (Performance Summary)\n\n")
         f.write("| 지표 | 값 |\n")
@@ -231,6 +280,31 @@ def generate_backtest_report(
         f.write(f"| 최대 손실 (Worst Trade) | ${stats['max_loss']:+,.2f} |\n")
         f.write(f"| 최대 낙폭 (MDD) | {stats['max_drawdown_pct']}% |\n")
         f.write(f"| 수익 팩터 (Profit Factor) | {stats['profit_factor']} |\n\n")
+
+        if decisions:
+            f.write("## 🧱 의사결정 및 차단 요약 (Decision Audit)\n\n")
+            f.write(f"- 총 의사결정 수: {decision_summary['total']}\n")
+            status_parts = [
+                f"{status}: {count}"
+                for status, count in sorted(decision_summary["by_status"].items())
+            ]
+            f.write(f"- 상태별 집계: {', '.join(status_parts) if status_parts else 'N/A'}\n")
+            f.write("\n| 전략 | OPENED | REJECTED | HOLD | SKIP |\n")
+            f.write("|------|--------|----------|------|------|\n")
+            for strategy, counts in sorted(decision_summary["by_strategy"].items()):
+                f.write(
+                    f"| {strategy} | {counts.get('OPENED', 0)} | {counts.get('REJECTED', 0)} "
+                    f"| {counts.get('HOLD', 0)} | {counts.get('SKIP', 0)} |\n"
+                )
+            f.write("\n")
+            if decision_summary["top_rejections"]:
+                f.write("| 차단 사유 | 횟수 |\n")
+                f.write("|-----------|------|\n")
+                for reason, count in decision_summary["top_rejections"][:5]:
+                    f.write(f"| {reason} | {count} |\n")
+                f.write("\n")
+            if stats["total_trades"] < 5:
+                f.write("> 표본 수가 적어 수익성 결론보다 차단 사유와 진입 품질을 우선 해석해야 합니다.\n\n")
 
         # 차트 이미지
         f.write("## 📉 차트 (Price Chart + Equity Curve)\n\n")

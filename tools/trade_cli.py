@@ -4,8 +4,8 @@ Agentic Trader Interactive CLI
 종목, 전략, 실행 모드를 선택하여 트레이딩 파이프라인을 트리거하는 대화형 CLI 도구입니다.
 
 사용법:
-  python cli.py              # 기본 (서버: localhost:8000)
-  python cli.py --port 8001  # 커스텀 포트
+  python tools/trade_cli.py              # 기본 (서버: localhost:8001)
+  python tools/trade_cli.py --port 8001  # 커스텀 포트
 """
 import argparse
 import json
@@ -17,7 +17,7 @@ import urllib.error
 def print_banner():
     print()
     print("=" * 52)
-    print("   🤖 Agentic Trader — Interactive CLI")
+    print("   Agentic Trader - Interactive CLI")
     print("   Zero-Human Hedge Fund Control Panel")
     print("=" * 52)
     print()
@@ -116,79 +116,47 @@ def select_timeframe() -> str:
     print("─" * 40)
     print("⏳ Step 2: 타임프레임 선택")
     print("─" * 40)
-    print("  [1] M5 (5분봉) ← 추천")
-    print("  [1] M5 (5분봉) - 기본값")
-    print("  [2] M15 (15분봉)")
+    print("  [1] M15,M30 (전략 검증 기본값) ← 추천")
+    print("  [2] M5 (5분봉)")
     print("  [3] H1 (1시간봉)")
-    print("  [4] 다중 타임프레임 (예: M5,H1)")
+    print("  [4] 직접 입력 (예: M15,M30)")
     print()
     
-    tf_map = {"1": "M5", "2": "M15", "3": "H1"}
+    tf_map = {"1": "M15,M30", "2": "M5", "3": "H1"}
     
     while True:
         choice = input("  선택 (번호 또는 콤마구분 직접입력, 기본=1): ").strip()
         if choice == "" or choice == "1":
-            print("  ✅ 타임프레임: M5")
+            print("  ✅ 타임프레임: M15,M30")
             print()
-            return "M5"
+            return "M15,M30"
         elif choice in tf_map:
             print(f"  ✅ 타임프레임: {tf_map[choice]}")
             print()
             return tf_map[choice]
-        else:
-            # 직접 콤마로 입력한 경우 유효성 검사 (간단히)
-            upper_tfs = [t.strip().upper() for t in choice.split(",") if t.strip()]
-            valid = True
-            for t in upper_tfs:
-                if t not in ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1"]:
-                    valid = False
-            
-            if valid and upper_tfs:
-                res = ",".join(upper_tfs)
-                print(f"  ✅ 타임프레임: {res}")
-                print()
-                return res
-            
-        print("  ⚠️ 잘못된 입력입니다. 다시 선택하세요.")
+        elif choice == "4":
+            choice = input("  타임프레임 입력 (예: M15,M30): ").strip()
 
+        # 직접 콤마로 입력한 경우 유효성 검사 (간단히)
+        upper_tfs = [t.strip().upper() for t in choice.split(",") if t.strip()]
+        valid = True
+        for t in upper_tfs:
+            if t not in ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1"]:
+                valid = False
 
-def select_strategy(base_url: str) -> str:
-    """전략 선택 메뉴를 표시합니다. 'auto'면 시장 상태 기반 자동 선택."""
-    print("─" * 40)
-    print("📈 Step 3: 전략 선택")
-    print("─" * 40)
-    
-    strategies = api_get(base_url, "/api/v1/strategies")
-    
-    print(f"  [0] 자동 선택 (Market Regime 기반) ← 추천")
-    if strategies:
-        for i, s in enumerate(strategies, 1):
-            regimes = ", ".join(s.get("allowed_regimes", []))
-            print(f"  [{i}] {s['name']:30s} ({regimes})")
-    
-    print()
-    while True:
-        choice = input("  선택 (번호 입력, 기본=0): ").strip()
-        if choice == "" or choice == "0":
-            print("  ✅ 자동 선택 (시장 상태 기반)")
+        if valid and upper_tfs:
+            res = ",".join(upper_tfs)
+            print(f"  ✅ 타임프레임: {res}")
             print()
-            return None  # None = auto
-        try:
-            idx = int(choice) - 1
-            if strategies and 0 <= idx < len(strategies):
-                selected = strategies[idx]["name"]
-                print(f"  ✅ 선택됨: {selected}")
-                print()
-                return selected
-        except ValueError:
-            pass
+            return res
+            
         print("  ⚠️ 잘못된 입력입니다. 다시 선택하세요.")
 
 
 def select_mode() -> str:
     """실행 모드 선택."""
     print("─" * 40)
-    print("🔒 Step 4: 실행 모드")
+    print("🔒 Step 3: 실행 모드")
     print("─" * 40)
     print("  [1] 📄 Paper Trading (모의 매매) ← 추천")
     print("  [2] 💰 Live Trading (실전 - Demo Account)")
@@ -214,9 +182,8 @@ def select_mode() -> str:
         print("  ⚠️ 잘못된 입력입니다. 1 또는 2를 입력하세요.")
 
 
-def confirm_and_execute(base_url: str, symbol: str, strategy: str, mode: str, timeframe: str):
+def confirm_and_execute(base_url: str, symbol: str, mode: str, timeframe: str):
     """최종 확인 후 트리거합니다."""
-    strategy_display = strategy if strategy else "Auto (Market Regime)"
     mode_display = "📄 Paper" if mode == "paper" else "💰 Live"
     
     print("=" * 40)
@@ -224,7 +191,7 @@ def confirm_and_execute(base_url: str, symbol: str, strategy: str, mode: str, ti
     print("=" * 40)
     print(f"  종목:   {symbol}")
     print(f"  시간:   {timeframe}")
-    print(f"  전략:   {strategy_display}")
+    print("  전략:   Auto (Market Regime)")
     print(f"  모드:   {mode_display}")
     print("=" * 40)
     print()
@@ -237,18 +204,17 @@ def confirm_and_execute(base_url: str, symbol: str, strategy: str, mode: str, ti
     print()
     print("🚀 Trading workflow 트리거 중...")
     
+    timeframes = [tf.strip().upper() for tf in timeframe.split(",") if tf.strip()]
     payload = {
         "symbol": symbol,
-        "timeframe": timeframe,
+        "timeframes": timeframes,
         "mode": mode,
     }
-    if strategy:
-        payload["strategy_override"] = strategy
-    
+
     result = api_post(base_url, "/api/v1/trade/trigger", payload)
     if result:
         print(f"  ✅ {result.get('message', 'Triggered')}")
-        print(f"  📌 종목: {result.get('symbol')}, 시간: {timeframe}, 모드: {result.get('mode')}")
+        print(f"  📌 종목: {result.get('symbol')}, 시간: {','.join(timeframes)}, 모드: {result.get('mode')}")
         print()
         print("  💡 서버 로그에서 파이프라인 실행 상태를 확인하세요.")
         print("     (서버 터미널에서 실시간 로그가 출력됩니다)")
@@ -270,7 +236,7 @@ def main():
     if not check_server_health(base_url):
         print("  서버에 연결할 수 없습니다.")
         print(f"  서버를 먼저 시작하세요: make run-wine")
-        print(f"  또는 포트를 확인하세요: python cli.py --port <PORT>")
+        print(f"  또는 포트를 확인하세요: python tools/trade_cli.py --port <PORT>")
         sys.exit(1)
     
     # 2. 종목 선택
@@ -279,14 +245,11 @@ def main():
     # 2-5. 타임프레임 선택
     timeframe = select_timeframe()
     
-    # 3. 전략 선택
-    strategy = select_strategy(base_url)
-    
-    # 4. 모드 선택
+    # 3. 모드 선택
     mode = select_mode()
     
-    # 5. 확인 및 실행
-    confirm_and_execute(base_url, symbol, strategy, mode, timeframe)
+    # 4. 확인 및 실행
+    confirm_and_execute(base_url, symbol, mode, timeframe)
 
 
 if __name__ == "__main__":

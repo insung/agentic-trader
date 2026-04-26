@@ -11,6 +11,8 @@ AI(LLM)를 두뇌로 활용하여 해외선물 및 주식을 자율적으로 거
 *   **Knowledge-Based Reasoning:** `docs/trading-strategies/`에 저장된 전문 전략 지식 베이스를 동적으로 주입하여 전략적 일관성을 유지합니다.
 *   **Position-Based Agentic Backtesting:** 실제 에이전트 파이프라인을 그대로 사용하되, 진입 후 열린 포지션을 유지하다가 청산 시점에 PnL과 복기를 기록합니다.
 
+프로젝트의 장기 방향과 설계 철학은 [docs/vision-and-philosophy.md](docs/vision-and-philosophy.md)를 참고하십시오.
+
 ## Quick Start (개발 및 테스트)
 
 이 프로젝트는 터미널 명령어를 간소화하기 위해 `Makefile`을 제공합니다.
@@ -36,12 +38,16 @@ AI(LLM)를 두뇌로 활용하여 해외선물 및 주식을 자율적으로 거
     ```
 5.  **수동으로 AI 매매 파이프라인 1사이클 트리거 (서버 구동 중):**
     ```bash
-    make trigger SYMBOL=EURUSD TIMEFRAMES=M5 MODE=paper
+    make trigger SYMBOL=EURUSD TIMEFRAMES=M15,M30 MODE=paper
+    # 또는 대화형 운영 도구:
+    make cli
     ```
 6.  **추적 중인 포지션 청산 여부 수동 동기화:**
     ```bash
     make reconcile
     ```
+
+자세한 테스트 절차는 [docs/testing-guide.md](docs/testing-guide.md), 실행/백테스트 절차는 [docs/execution-guide.md](docs/execution-guide.md)를 참고하십시오.
 
 ## 💻 로컬 환경 세팅 가이드 (Linux/Wine)
 MetaTrader 5는 공식적으로 Windows만 지원하므로, Linux 환경에서는 Wine을 사용해야 합니다. 

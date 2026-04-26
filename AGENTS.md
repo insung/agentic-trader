@@ -17,11 +17,13 @@
 
 1. `AGENTS.md`
 2. `README.md`
-3. `docs/mvp-implementation-plan.md`
-4. `git status --short`
-5. `git log --oneline -5`
-6. 백테스트/운영 작업이면 `docs/testing-and-execution-guide.md`, `docs/live-operation-runbook.md`
-7. 전략 작업이면 `docs/trading-strategies/`, `backend/config/strategies_config.json`, `backend/features/trading/strategy_validators.py`
+3. `docs/vision-and-philosophy.md`
+4. `docs/mvp-implementation-plan.md`
+5. `git status --short`
+6. `git log --oneline -5`
+7. 테스트 작업이면 `docs/testing-guide.md`
+8. 백테스트/운영 작업이면 `docs/execution-guide.md`, `docs/live-operation-runbook.md`
+9. 전략 작업이면 `docs/trading-strategies/`, `backend/config/strategies_config.json`, `backend/features/trading/strategy_validators.py`
 
 도구별 지침:
 
@@ -82,6 +84,7 @@ agentic-trader/
 │   ├── scripts/             # Backtest/history scripts
 │   └── main.py              # FastAPI entrypoint
 ├── docs/                    # Architecture, runbooks, strategy documents
+│   └── vision-and-philosophy.md
 ├── tests/                   # Unit/integration tests
 ├── backtests/               # Ignored generated data/results/reports
 └── trading_logs/            # Ignored generated trade reviews/state

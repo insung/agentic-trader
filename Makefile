@@ -44,14 +44,14 @@ reconcile:
 # 대화형 CLI 실행
 cli:
 	@echo "Starting interactive CLI..."
-	$(VENV_BIN)/python cli.py --port $(PORT)
+	$(VENV_BIN)/python tools/trade_cli.py --port $(PORT)
 
 install: venv
 	@echo "Installing dependencies..."
 	$(VENV_BIN)/pip install -r requirements.txt
 
 # --- Backtesting Commands ---
-TIMEFRAMES ?= M5,H1
+TIMEFRAMES ?= M15,M30
 DAYS ?= 30
 FROM ?=
 TO ?=

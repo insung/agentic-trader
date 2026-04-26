@@ -30,7 +30,7 @@ agentic-trader/
 현재 "아이디어 구체화 및 설계" 단계를 마치고, MVP 구현을 위한 실행 로드맵에 따라 개발을 진행합니다. Codex, Gemini CLI, Google Antigravity 등 어떤 AI 도구를 쓰더라도 root `AGENTS.md`를 공통 SSOT로 삼고, TDD gate와 FastAPI/LangGraph/deterministic guardrail 원칙을 동일하게 적용합니다.
 
 ### Phase 0: 기반 세팅 및 뼈대 구축 (완료)
-*   [x] 프로젝트 구조 및 아키텍처 설계 (`README.md`, `PHILOSOPHY.md`, `AGENTS.md` 등)
+*   [x] 프로젝트 구조 및 아키텍처 설계 (`README.md`, `docs/vision-and-philosophy.md`, `AGENTS.md` 등)
 *   [x] Linux Mint + Wine 환경에서 MetaTrader 5 설치 및 데모 계정 연동
 *   [x] FastAPI 백엔드 뼈대 코드(Boilerplate) 및 핵심 `TODO` 주석 구성
 
@@ -118,10 +118,12 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
 새 세션 시작 시 권장 로드 순서:
 1.  `AGENTS.md`
 2.  `README.md`
-3.  `docs/mvp-implementation-plan.md`
-4.  최근 변경 확인: `git status --short`, `git log --oneline -5`
-5.  현재 작업이 백테스트/운영 관련이면 `docs/testing-and-execution-guide.md`, `docs/live-operation-runbook.md`
-6.  전략 관련이면 `docs/trading-strategies/`, `backend/config/strategies_config.json`, `backend/features/trading/strategy_validators.py`
+3.  `docs/vision-and-philosophy.md`
+4.  `docs/mvp-implementation-plan.md`
+5.  최근 변경 확인: `git status --short`, `git log --oneline -5`
+6.  현재 작업이 테스트 관련이면 `docs/testing-guide.md`
+7.  백테스트/운영 관련이면 `docs/execution-guide.md`, `docs/live-operation-runbook.md`
+8.  전략 관련이면 `docs/trading-strategies/`, `backend/config/strategies_config.json`, `backend/features/trading/strategy_validators.py`
 
 작업 종료 시 handoff 규칙:
 *   코드 변경이 있으면 테스트 명령과 결과를 최종 응답 및 관련 문서에 남깁니다.

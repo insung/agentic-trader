@@ -27,7 +27,7 @@ agentic-trader/
 ---
 
 ## 🚀 단계별 구현 계획 (Action Plan & Checklist)
-현재 "아이디어 구체화 및 설계" 단계를 마치고, MVP 구현을 위한 실행 로드맵에 따라 개발을 진행합니다. 이 과정은 메인 AI 에이전트(Gemini CLI)의 지휘 하에 `coder` 에이전트가 코딩을 전담하는 방식으로 이루어집니다.
+현재 "아이디어 구체화 및 설계" 단계를 마치고, MVP 구현을 위한 실행 로드맵에 따라 개발을 진행합니다. Codex, Gemini CLI, Google Antigravity 등 어떤 AI 도구를 쓰더라도 root `AGENTS.md`를 공통 SSOT로 삼고, TDD gate와 FastAPI/LangGraph/deterministic guardrail 원칙을 동일하게 적용합니다.
 
 ### Phase 0: 기반 세팅 및 뼈대 구축 (완료)
 *   [x] 프로젝트 구조 및 아키텍처 설계 (`README.md`, `PHILOSOPHY.md`, `AGENTS.md` 등)
@@ -91,6 +91,44 @@ agentic-trader/
 ## 🔮 향후 과제 (Future Roadmap)
 MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"로 거듭나기 위해 필요한 고도화 작업들입니다.
 
+### 현재 부족한 부분 요약 (2026-04 기준)
+*   **백테스트 속도와 재현성:** 현재 백테스트는 각 Step마다 LangGraph와 LLM을 호출하므로 느리고, 같은 데이터라도 LLM 응답/외부 API 상태에 따라 결과가 흔들릴 수 있습니다. 빠른 반복 실험을 위해 LLM 응답 캐시, deterministic replay, `--from/--to`, `--max-steps` 같은 부분 실행 옵션이 필요합니다.
+*   **성과 데이터의 구조화 부족:** 리포트는 사람이 읽기 좋지만, 전략별/기간별/타임프레임별 성과를 누적 비교하기에는 부족합니다. 모든 백테스트 결과를 SQLite 또는 Parquet에 저장하고, `strategy`, `symbol`, `timeframe`, `risk_pct`, `step`, `win_rate`, `profit_factor`, `max_drawdown`, `blocked_reason`을 쿼리할 수 있어야 합니다.
+*   **전략 검증은 시작 단계:** MA/Bollinger validator는 생겼지만, 아직 전략별 파라미터 튜닝, walk-forward 검증, out-of-sample 검증, 비용/스프레드/슬리피지 반영이 부족합니다. 현재 결과는 실제 체결 환경보다 낙관적일 수 있습니다.
+*   **운영 상태 저장이 취약:** 열린 포지션과 복기 상태가 로컬 JSON 중심이라 재시작/동시 실행/중복 처리에 취약합니다. 운영 단계에서는 SQLite 이상으로 옮겨 원자적 업데이트와 중복 방지를 보장해야 합니다.
+*   **세션 간 실행 기억 구조화 부족:** `AGENTS.md`를 Codex/Gemini/Antigravity 공통 SSOT로 정리했지만, 최근 실험 결과와 운영 지표는 아직 Markdown/JSON 중심입니다. 향후 SQLite/Vector DB 기반의 검색 가능한 기억 구조가 필요합니다.
+*   **관측 가능성 부족:** 주문 차단 사유, LLM 판단, validator 통과/실패, MT5 응답, reconcile 결과를 한눈에 보는 로그/대시보드/알림 체계가 필요합니다.
+
+### AI 세션 지식 축적 프로토콜 (필수 운영 규칙)
+새 AI 세션이 매번 프로젝트를 처음부터 다시 추론하지 않도록, 지식을 다음 3층으로 나누어 축적합니다.
+
+1.  **영구 컨텍스트:** `AGENTS.md`
+    *   프로젝트 철학, 아키텍처 원칙, 반드시 지켜야 할 금지 사항을 기록합니다.
+    *   새로운 세션은 작업 전 반드시 `AGENTS.md`를 먼저 읽고, FastAPI/LangGraph/Guardrail 중심 구조와 TDD gate를 우선해야 합니다.
+    *   `GEMINI.md`는 Google 도구 호환용 얇은 오버레이이며, 프로젝트 원칙은 `AGENTS.md`에만 중복 없이 기록합니다.
+    *   바꾸기 어려운 원칙만 기록하고, 실험 로그나 임시 결론은 넣지 않습니다.
+2.  **로드맵 및 현재 상태:** `docs/mvp-implementation-plan.md`
+    *   완료된 Phase, 아직 부족한 점, 다음 목표를 기록합니다.
+    *   큰 기능을 끝냈거나 중요한 방향 전환이 생기면 이 문서를 갱신합니다.
+    *   새 세션은 `AGENTS.md` 다음으로 이 문서를 읽어 “지금 어디까지 왔는지”를 파악합니다.
+3.  **실험/운영 지식:** `trading_logs/`, `backtests/reports/`, 향후 `backtests/results/index.sqlite`
+    *   개별 매매 복기, 백테스트 리포트, validator 차단 사유, 성과 통계는 여기에 축적합니다.
+    *   향후에는 마크다운뿐 아니라 SQLite/Vector DB에 구조화하여, Chief Trader와 새 AI 세션이 검색 가능한 기억으로 사용합니다.
+
+새 세션 시작 시 권장 로드 순서:
+1.  `AGENTS.md`
+2.  `README.md`
+3.  `docs/mvp-implementation-plan.md`
+4.  최근 변경 확인: `git status --short`, `git log --oneline -5`
+5.  현재 작업이 백테스트/운영 관련이면 `docs/testing-and-execution-guide.md`, `docs/live-operation-runbook.md`
+6.  전략 관련이면 `docs/trading-strategies/`, `backend/config/strategies_config.json`, `backend/features/trading/strategy_validators.py`
+
+작업 종료 시 handoff 규칙:
+*   코드 변경이 있으면 테스트 명령과 결과를 최종 응답 및 관련 문서에 남깁니다.
+*   아키텍처 결정이나 반복될 교훈은 `docs/mvp-implementation-plan.md` 또는 `AGENTS.md`에 반영합니다.
+*   백테스트에서 나온 수치/차단 사유/결론은 리포트와 결과 DB에 남기고, 단순 대화 안에만 두지 않습니다.
+*   “지금은 보류한 이유”도 기록합니다. 다음 세션이 같은 길을 다시 탐색하지 않게 하기 위함입니다.
+
 ### Phase 6: 운영 안정성 및 재시작 복구 강화 (예정)
 *   **목표:** 봇을 장시간 켜두는 운영 환경에서 중복 진입, 상태 유실, 청산 미복기를 방지합니다.
 *   **계획:**
@@ -99,6 +137,25 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
     *   현재 로컬 JSON 기반 상태 저장(`tracked_positions.json`, `reviewed_trades.json`)을 SQLite로 이전하여 원자적 업데이트, 중복 방지, 재시작 복구를 강화합니다.
     *   주문 실패, MT5 연결 끊김, LLM API 실패, reconcile 실패에 대한 재시도/백오프/알림 정책을 정의합니다.
     *   VPS 운영 runbook을 기준으로 데모 계좌에서 1주일 이상 연속 구동 검증을 수행합니다.
+
+### Phase 6.5: 백테스트 엔진 속도, 캐시, 성과 DB 강화 (예정)
+*   **목표:** LLM 기반 백테스트를 빠르고 재현 가능하게 만들고, 결과를 누적 분석 가능한 데이터 자산으로 전환합니다.
+*   **계획:**
+    *   `run_backtest.py`에 `--from`, `--to`, `--max-steps`, `--no-review` 옵션을 추가하여 짧은 디버그 실행과 긴 검증 실행을 분리합니다.
+    *   동일한 `(symbol, timeframes, candle_time, raw_data, prompt_version)` 조합의 LLM 응답을 캐시하여 반복 백테스트 비용과 시간을 줄입니다.
+    *   LLM 호출 없이 저장된 의사결정 캐시를 재생하는 deterministic replay 모드를 추가합니다.
+    *   백테스트 결과 JSON을 SQLite/Parquet 인덱스로 적재하여 전략별 성과를 비교합니다.
+    *   validator 차단 사유를 별도로 집계하여 “어떤 조건 때문에 거래가 줄었는지”를 분석합니다.
+    *   스프레드, 수수료, 슬리피지, bid/ask 차이를 반영한 현실적인 체결 모델을 추가합니다.
+
+### Phase 6.6: 전략 연구 및 검증 체계 고도화 (예정)
+*   **목표:** 단일 백테스트 결과에 과최적화되지 않도록 연구 프로세스를 표준화합니다.
+*   **계획:**
+    *   월별 walk-forward 검증을 도입하여 in-sample 튜닝과 out-of-sample 검증을 분리합니다.
+    *   전략별 파라미터(`min_adx`, `min_sl_atr`, Bollinger tolerance, risk_pct)를 config화하고 grid/random search를 수행합니다.
+    *   성과 기준을 단순 PnL이 아니라 Profit Factor, MDD, 기대값, 연속 손실, 거래 빈도, 평균 보유 시간으로 평가합니다.
+    *   “거래하지 않아서 피한 손실”과 “차단 때문에 놓친 수익”을 함께 분석하는 blocked-trade audit 리포트를 만듭니다.
+    *   최소 표본 수 미달 전략은 실전 후보로 승격하지 않는 기준을 둡니다.
 
 ### Phase 7: RAG 자기학습 루프 완성 (예정)
 *   **목표:** 청산 후 복기(`Lessons Learned`)가 다음 매매 판단에 실제로 반영되도록 기억 루프를 완성합니다.

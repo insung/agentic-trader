@@ -1,49 +1,129 @@
-# AI Session Context & Agents Roster (AGENTS.md)
+# Agentic Trader AI Project Rules
 
-이 문서는 새로운 AI 세션(Gemini CLI, Claude Code 등)이 시작될 때, 이전 세션까지 합의된 프로젝트의 목표, 아키텍처 철학, 그리고 멀티 에이전트들의 역할을 단번에 파악하기 위한 **핵심 컨텍스트 전달 문서(Brain Dump)**입니다. AI 에이전트는 이 프로젝트를 수정하거나 코드를 짤 때 가장 먼저 이 문서를 읽고 현재의 방향성과 강제 규칙(Mandatory Rules)을 숙지해야 합니다.
+이 파일은 Codex, Gemini CLI, Google Antigravity 등 이 저장소에 접속하는 모든 AI 세션의 **공통 지침 SSOT(Single Source of Truth)**입니다. 도구별 설정 파일이 있더라도 프로젝트 원칙은 이 파일을 우선합니다.
 
----
+## 1. Project Goal
 
-## 🎯 1. Project Goal & Philosophy (우리의 지향점)
-우리는 단순한 트레이딩 봇이 아닌, **"나만의 무인 펀드 회사(Zero-Human Hedge Fund)"**를 구축합니다.
-1.  **Philosophy of Paperclip:** 최근 AI 씬의 트렌드인 Paperclip 프레임워크의 철학을 차용하여, AI 에이전트들에게 단순히 기능을 맡기는 것이 아니라 `CEO`, `CTO`, `수석 트레이더(Chief Trader)`, `기술 분석가(Tech Analyst)` 등의 **명확한 직책(Role)과 권한(Harness)**을 부여하여 완벽하게 협업시킵니다. 인간은 이사회(Board)의 역할만 수행합니다.
-2.  **Engine of LangGraph:** 트레이딩은 1분 1초가 돈과 직결되는 특수한 도메인이므로, Paperclip 자체 플랫폼(느리고 통제 불가능한 비동기 티켓 시스템)을 엔진으로 쓰지 않습니다. 대신, **100% 확정적(Deterministic)이고 빠르고 비용이 극도로 싼 파이썬의 LangGraph**를 제어 흐름(Control Flow) 엔진으로 채택합니다.
-3.  **Safety & Air-gap:** AI는 결코 거래소(MT5)에 직접 주문을 넣을 수 없습니다. 모든 매매 명령은 파이썬 백엔드(FastAPI)가 가로채어(Intercept) 하드코딩된 '절대 안전 규칙(1% 룰, 일일 손실 한도 등)'을 검사한 후 통과된 주문만 실행합니다.
+우리는 단순한 트레이딩 봇이 아니라 **"나만의 무인 펀드 회사(Zero-Human Hedge Fund)"**를 구축합니다.
 
----
+1. **Role-based AI Organization:** Tech Analyst, Strategist, Chief Trader, Risk Reviewer처럼 명확한 직책과 책임을 가진 AI 직원들이 협업합니다. 인간은 이사회(Board) 역할을 합니다.
+2. **LangGraph Engine:** 매매 제어 흐름은 느리고 비결정적인 티켓/스킬 체계가 아니라 Python LangGraph 상태 머신이 통제합니다.
+3. **Safety & Air-gap:** 어떤 AI도 MT5/거래소에 직접 주문을 넣을 수 없습니다. 모든 주문은 FastAPI/Python 백엔드의 hard-coded guardrail을 통과해야 합니다.
+4. **Deterministic Strategy Gates:** LLM은 전략을 제안할 수 있지만, 주문 직전에는 Python validator가 EMA/ADX/ATR/Bollinger/RSI 등 계산값으로 전략 조건을 다시 검산해야 합니다.
 
-## 🏢 2. Project Architecture & Structure (프로젝트 구조)
-시스템은 크게 3가지 레이어로 구성됩니다.
+## 2. Mandatory Session Startup
 
-1.  **Frontend (None for now):** UI는 당장 고려하지 않으나 향후 확장을 위해 철저히 API 기반으로 분리.
-2.  **Orchestrator & Backend (Python FastAPI + LangGraph):**
-    *   `backend/api/`: 외부(Webhook)나 내부 스케줄러(Cron)로부터 시장 이벤트를 감지하여 LangGraph 파이프라인을 격발(Trigger)시키는 디스패처.
-    *   `backend/core/`: 1일 손실 락(Lock), 매매 횟수 제한, 랏수(Lot) 자동 계산 등 AI의 환각을 물리적으로 막아내는 절대 안전 장치(Guardrails).
-    *   `workflows/ (LangGraph)`: 파이썬 코드로 각 에이전트 노드(Node)의 실행 순서를 100% 강제(Hard-coded Routing).
-3.  **The AI Brains (`.agents/agents/*.md`):**
-    *   이 폴더의 마크다운 파일들은 CLI 에이전트용 실행 파일이 아닙니다! 파이썬 LangGraph 오케스트레이터가 LLM API(Gemini/Claude)를 호출할 때 주입하는 **'각 에이전트별 시스템 프롬프트(System Prompt Templates)'**입니다.
+새 AI 세션은 작업 전 반드시 아래 순서로 읽고 현재 상태를 파악합니다.
 
----
+1. `AGENTS.md`
+2. `README.md`
+3. `docs/mvp-implementation-plan.md`
+4. `git status --short`
+5. `git log --oneline -5`
+6. 백테스트/운영 작업이면 `docs/testing-and-execution-guide.md`, `docs/live-operation-runbook.md`
+7. 전략 작업이면 `docs/trading-strategies/`, `backend/config/strategies_config.json`, `backend/features/trading/strategy_validators.py`
 
-## 👔 3. Agent Roster (조직도 및 에이전트 명단)
-LangGraph 파이프라인(Workflow) 내에서 순차적으로 호출되며 협업하는 AI 직원들의 명단입니다. (자세한 워크플로우는 `docs/agent-workflow-design.md` 참조)
+도구별 지침:
 
-1.  **Agent 1 (Tech Analyst / 기술 분석가)**
-    *   **입력:** 백엔드가 순수 파이썬(pandas-ta)으로 계산한 차트 데이터 및 보조지표 JSON.
-    *   **출력:** 현재 시장의 기술적 추세에 대한 편견 없는 요약 브리핑.
-2.  **Agent 2 (Strategist / 전략가)**
-    *   **입력:** Tech Analyst의 브리핑 데이터.
-    *   **출력:** `docs/trading-strategy.md` 인덱스를 참고하여, 현재 장세에 가장 적합한 매매 가설 도출 (예: "현재는 RSI 역추세 전략이 유효함").
-3.  **Agent 3 (Sentiment Analyst / 심리 분석가 - Optional)**
-    *   **입력:** 뉴스 API, 공포/탐욕 지수.
-    *   **출력:** 거시 경제 및 시장의 센티멘트 요약.
-4.  **Agent 4 (Chief Trader / 수석 트레이더 - 최종 결정권자)**
-    *   **입력:** 위 1,2,3번 요원들의 모든 브리핑 + **(중요) 과거 매매 일지 DB에서 검색해 온 유사 상황 피드백(RAG)**.
-    *   **출력:** 매매 가설에 대한 최종 승인/기각 여부, 그리고 진입 방향과 손절선(SL)이 담긴 확정된 JSON 주문 객체.
-5.  **Agent 5 (Risk Reviewer / 리스크 감사관 및 서기)**
-    *   **입력:** 포지션 청산 후의 결과 데이터 및 당시 Agent 4의 매매 논리.
-    *   **출력:** 무엇을 잘했고 틀렸는지 복기하는 '매매 일지(Trading Journal)'. 이 일지는 벡터 DB에 저장되어 다음 매매 시 Agent 4의 지식(Knowledge)으로 재사용됨(자가 발전).
+- Codex: 이 `AGENTS.md`만으로 충분해야 합니다.
+- Gemini/Google Antigravity: `GEMINI.md`가 있더라도 얇은 호환 오버레이일 뿐이며, 프로젝트 원칙은 이 파일을 따릅니다.
+- `.agents/agents/*.md`: CLI 에이전트 실행 파일이 아니라 LangGraph 런타임이 LLM API 호출 시 주입하는 system prompt template입니다.
 
----
-> **미래의 AI 에이전트에게 보내는 메시지 (Mandatory Hook):**
-> 당신이 새로운 세션으로 이 프로젝트에 접속했다면, 먼저 이 `AGENTS.md`의 구조를 완벽히 이해하십시오. CLI 스킬을 남용하여 스스로 모든 것을 해결하려 하지 말고, 파이썬 기반의 LangGraph 워크플로우와 FastAPI 백엔드의 안전 규칙을 준수하는 방향으로 코드를 작성하고 아키텍처를 고도화하십시오.
+## 3. Architecture Rules
+
+1. **LLM is not the orchestrator.**
+   - LangGraph와 FastAPI가 워크플로우, 라우팅, 주문 실행을 통제합니다.
+   - CLI 에이전트가 ReAct loop나 스킬 연쇄 호출로 매매를 직접 진행하도록 설계하지 않습니다.
+   - LLM은 특정 노드 상태를 읽고 structured JSON 판단을 반환하는 1회성 reasoning engine으로만 동작합니다.
+
+2. **Python owns math, state, and safety.**
+   - 지표 계산, 포지션 추적, 주문 검증, 리스크 한도, lot size 계산은 Python에서 결정적으로 처리합니다.
+   - LLM에게 원시 데이터 계산을 맡기지 않습니다.
+   - 주문은 반드시 `validate_order_prices`, `validate_strategy_setup`, risk-percent lot sizing, 일일 손실/횟수 제한 등 guardrail을 통과해야 합니다.
+
+3. **AI-Native vertical slice over over-engineered layers.**
+   - 과도한 인터페이스/추상 클래스/레이어 분리를 만들지 않습니다.
+   - 특정 기능의 adapter, usecase, guardrail, validator는 가능한 한 `backend/features/<domain>/` 아래 응집시킵니다.
+   - cross-cutting Pydantic state/model은 `backend/core/`에 둡니다.
+   - 도메인 객체는 복잡한 OOP 메서드보다 직렬화 가능한 Pydantic model과 순수 함수 중심으로 유지합니다.
+
+4. **Strategy registry, not strategy hallucination.**
+   - 새 전략은 `docs/trading-strategies/`에 문서화하고 `backend/config/strategies_config.json`에 등록합니다.
+   - 주문 가능한 전략은 `backend/features/trading/strategy_validators.py`에 deterministic gate가 있어야 합니다.
+   - validator가 없는 전략은 실전/Paper 주문으로 승격하지 않습니다.
+
+## 4. TDD Gate
+
+모든 코드 변경은 아래 순서를 기본값으로 따릅니다.
+
+1. 실패하는 테스트를 먼저 작성하거나 기존 테스트로 실패 조건을 재현합니다.
+2. 실패를 확인합니다. 단, 문서/설정 정리처럼 테스트 선행이 의미 없는 경우에는 예외 사유를 최종 응답에 적습니다.
+3. 최소 구현으로 테스트를 통과시킵니다.
+4. `make test`를 실행합니다.
+5. 테스트 명령과 결과를 최종 응답에 남깁니다.
+
+테스트 작성 기준:
+
+- Guardrail, validator, order execution, position tracking, state schema 변경은 반드시 단위 테스트를 추가/수정합니다.
+- LangGraph routing이나 LLM node 변경은 mock 기반 테스트를 추가/수정합니다.
+- 백테스트 결론은 대화에만 남기지 않고 `backtests/reports/`와 향후 결과 DB에 남깁니다.
+
+## 5. Project Structure
+
+```text
+agentic-trader/
+├── .agents/                 # LangGraph LLM system prompt templates
+│   ├── agents/              # Tech Analyst, Strategist, Chief Trader, Risk Reviewer prompts
+│   └── workflows/           # Human/AI workflow notes, not runtime orchestrators
+├── backend/
+│   ├── core/                # Pydantic state/models, shared exceptions, cross-cutting contracts
+│   ├── features/trading/    # Trading vertical slice: indicators, guardrails, MT5 adapter, validators
+│   ├── workflows/           # LangGraph graph, nodes, state alias
+│   ├── scripts/             # Backtest/history scripts
+│   └── main.py              # FastAPI entrypoint
+├── docs/                    # Architecture, runbooks, strategy documents
+├── tests/                   # Unit/integration tests
+├── backtests/               # Ignored generated data/results/reports
+└── trading_logs/            # Ignored generated trade reviews/state
+```
+
+## 6. Agent Roster
+
+LangGraph 파이프라인은 아래 역할을 순차적으로 호출합니다. 자세한 워크플로우는 `docs/agent-workflow-design.md`를 참고합니다.
+
+1. **Tech Analyst**
+   - 입력: Python이 계산한 OHLCV/indicator JSON.
+   - 출력: 매수/매도 지시가 아닌 객관적 기술 분석 브리핑.
+2. **Strategist**
+   - 입력: Tech Analyst 브리핑과 동적으로 주입된 전략 문서.
+   - 출력: 현재 장세에 맞는 매매 가설.
+3. **Sentiment Analyst (optional)**
+   - 입력: 뉴스, 경제 일정, sentiment API.
+   - 출력: 거시/심리 리스크 요약.
+4. **Chief Trader**
+   - 입력: 모든 브리핑, deterministic indicator data, 향후 RAG로 검색된 과거 복기.
+   - 출력: 승인/기각 및 SL/TP가 포함된 structured order intent.
+5. **Risk Reviewer**
+   - 입력: 실제 청산 완료된 거래 결과와 당시 판단 컨텍스트.
+   - 출력: 다음 판단에 재사용 가능한 trading journal.
+
+## 7. Memory & Handoff
+
+지식은 세 층으로 나누어 축적합니다.
+
+1. **Permanent rules:** `AGENTS.md`
+   - 오래 유지될 프로젝트 철학, 아키텍처 원칙, 금지 사항만 기록합니다.
+2. **Current state and roadmap:** `docs/mvp-implementation-plan.md`
+   - 완료 phase, 부족한 점, 다음 목표, 보류 이유를 기록합니다.
+3. **Operational/experimental memory:** `trading_logs/`, `backtests/reports/`, `backtests/results/`
+   - 복기, 백테스트 리포트, 원본 결과, validator 차단 사유를 축적합니다.
+
+작업 종료 시:
+
+- 코드 변경이 있으면 실행한 테스트 명령과 결과를 최종 응답에 남깁니다.
+- 새로 알게 된 반복 교훈, 아키텍처 결정, 보류 이유는 `docs/mvp-implementation-plan.md`에 반영합니다.
+- 사용자 변경으로 보이는 파일은 되돌리지 말고, 커밋 시 의도한 파일만 선별합니다.
+
+## 8. Mandatory Hook
+
+새 AI 세션이라면 먼저 이 파일의 구조를 이해하십시오. 이어서 `README.md`, `docs/mvp-implementation-plan.md`, 최근 git 상태를 확인하십시오. 범용 CLI 스킬이나 도구별 에이전트 파일을 늘리는 방식으로 문제를 해결하지 말고, Python LangGraph workflow, FastAPI backend, deterministic guardrail, strategy validator를 중심으로 코드를 작성하십시오.

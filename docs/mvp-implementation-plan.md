@@ -70,6 +70,22 @@ agentic-trader/
     *   [x] `Tech Analyst` 노드가 시장 상태(Market Regime)를 진단하도록 프롬프트 업데이트.
     *   [x] `backend/config/strategies_config.json` 레지스트리를 구축하여, 장세에 맞는 전략만 `Strategist` 에이전트에게 동적으로 주입하는 파이프라인 구현 완료. (`backend/workflows/nodes.py`)
 
+### Phase 5.5: 백테스트 기반 전략 튜닝 및 검증 강화 (완료)
+*   **배경:** `backtests/reports/backtest_BTCUSD_20260426_051456.md` 분석 결과, 1% 룰은 정확히 작동했지만 4회 연속 SL로 손실이 발생했습니다. 문제는 손실 크기가 아니라 LLM이 EMA/ADX/볼린저 조건을 실제 수치로 검산하지 못한 진입 품질이었습니다.
+*   **작업 내용:**
+    *   [x] `backend/features/trading/indicators.py`를 추가하여 EMA20/EMA50, ATR14, ADX14, Bollinger Bands, RSI14를 백엔드에서 확정적으로 계산하고 각 타임프레임별 indicator snapshot을 생성합니다.
+    *   [x] `fetch_data_node`가 최근 OHLCV뿐 아니라 계산된 지표와 snapshot을 `raw_data` 및 `indicator_data`에 주입하도록 변경했습니다. Tech Analyst/Strategist/Chief Trader는 더 이상 지표를 추정하지 않고 계산값을 기반으로 판단해야 합니다.
+    *   [x] `backend/features/trading/strategy_validators.py`를 추가했습니다. 주문 직전 MA Crossover는 최근 EMA 교차, 가격 위치, ADX를 검증하고, Bollinger Reversion은 밴드 이탈/반전 캔들/추세 과열 여부를 검증합니다.
+    *   [x] ATR14 대비 SL 거리가 너무 좁은 주문을 차단합니다. 기본 최소값은 `1.0 ATR`입니다.
+    *   [x] 검증 단계의 기본 백테스트 리스크를 거래당 `0.5%`로 낮추고, `--risk-pct` 및 Makefile `RISK_PCT`로 조정 가능하게 했습니다. 실전/Paper는 `RISK_PER_TRADE_PCT` 환경 변수로 조정합니다.
+    *   [x] 백테스트 리포트와 원본 JSON에 차트 기준 타임프레임, 의사결정 타임프레임, 호출 간격, 거래당 리스크 한도를 기록합니다.
+*   **검증 결과:**
+    *   기존 BTCUSD 손실 리포트의 4개 진입은 새 validator 기준으로 모두 차단됩니다.
+        *   Trade #1, #2: SL 거리가 ATR14 대비 너무 좁음.
+        *   Trade #3: Bollinger Double Bottom 조건 미충족.
+        *   Trade #4: Bollinger Double Top 조건 및 상승 추세 해소 조건 미충족.
+    *   관련 단위 테스트: `tests/test_strategy_validators.py`, `tests/test_guardrails.py`.
+
 ---
 
 ## 🔮 향후 과제 (Future Roadmap)

@@ -164,6 +164,7 @@ from backend.features.trading.mt5_adapter import MT5Client, execute_mock_order, 
 from backend.core.state_models import Order, OrderAction
 from backend.features.trading.market_hours import is_market_open, get_market_status_message
 from backend.features.trading.guardrails import validate_order_prices
+from backend.features.trading.strategy_validators import validate_strategy_setup
 
 def _model_to_dict(value):
     if hasattr(value, "model_dump"):
@@ -214,11 +215,22 @@ def run_trading_workflow(symbol: str, strategy_override: str = None, mode: str =
         entry_price = final_order.get("entry_price", 0.0)
         
         account_balance = final_state.get("account_info", {}).get("balance", 10000.0)
+        risk_per_trade_pct = float(os.environ.get("RISK_PER_TRADE_PCT", "0.005"))
         if not validate_order_prices(action, entry_price, sl, tp):
             print(
                 f"⛔ Guardrail blocked order: invalid SL/TP direction or risk/reward "
                 f"(action={action}, entry={entry_price}, sl={sl}, tp={tp})"
             )
+            return
+        setup_ok, setup_reason = validate_strategy_setup(
+            action,
+            entry_price,
+            sl,
+            final_state.get("strategy_hypothesis", {}),
+            final_state.get("indicator_data", {}),
+        )
+        if not setup_ok:
+            print(f"⛔ Strategy validator blocked order: {setup_reason}")
             return
         
         order = Order(
@@ -238,14 +250,15 @@ def run_trading_workflow(symbol: str, strategy_override: str = None, mode: str =
                 order=order,
                 current_loss_pct=0.0,
                 today_trade_count=0,
-                account_balance=account_balance
+                account_balance=account_balance,
+                risk_per_trade_pct=risk_per_trade_pct,
             )
             print(f"🔥 LIVE Order Result: {result}")
             order_result = result.model_dump()
         else:
             # Paper Trading 모드
             from backend.features.trading.guardrails import enforce_one_percent_rule
-            safe_lot = enforce_one_percent_rule(account_balance, entry_price, sl)
+            safe_lot = enforce_one_percent_rule(account_balance, entry_price, sl, risk_pct=risk_per_trade_pct)
             if safe_lot <= 0:
                 print("⛔ Guardrail blocked paper order: lot size calculated to <= 0")
                 return

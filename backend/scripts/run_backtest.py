@@ -6,7 +6,7 @@ LangGraph 에이전트 파이프라인(app.invoke)을 반복 호출하여
 AI의 실제 매매 판단을 과거 데이터 위에서 시뮬레이션합니다.
 
 사용법:
-    python -m backend.scripts.run_backtest --data backtests/data/EURUSD_H1_30d_20260425.csv
+    python -m backend.scripts.run_backtest --data backtests/data/EURUSD_20250101-20250131_H1.csv
 """
 import argparse
 import json
@@ -21,12 +21,14 @@ import pandas as pd
 
 from backend.features.trading.guardrails import validate_order_prices
 from backend.features.trading.position_tracker import build_decision_context, review_closed_trade
+from backend.features.trading.strategy_validators import validate_strategy_setup
 
 # 프로젝트 루트를 기준으로 경로 설정
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 기본 설정
 DEFAULT_INITIAL_BALANCE = 10_000.0
+DEFAULT_RISK_PER_TRADE_PCT = 0.005
 LOOKBACK_CANDLES = 100  # 각 시점에서 에이전트에게 보여줄 과거 캔들 수
 STEP_INTERVAL = 5       # 몇 캔들마다 파이프라인을 호출할지 (비용 절감)
 
@@ -49,6 +51,7 @@ class BacktestEngine:
         symbol: str = "EURUSD",
         timeframes: List[str] = None,
         initial_balance: float = DEFAULT_INITIAL_BALANCE,
+        risk_per_trade_pct: float = DEFAULT_RISK_PER_TRADE_PCT,
         step_interval: int = STEP_INTERVAL,
     ):
         self.data_paths = data_paths
@@ -56,6 +59,7 @@ class BacktestEngine:
         self.timeframes = timeframes if timeframes else ["M5"]
         self.initial_balance = initial_balance
         self.balance = initial_balance
+        self.risk_per_trade_pct = risk_per_trade_pct
         self.step_interval = step_interval
 
         # 전체 과거 데이터 로드
@@ -280,10 +284,21 @@ class BacktestEngine:
                         )
                         self.equity_curve.append({"time": str(current_time), "balance": self.balance, "action": "REJECTED"})
                         continue
+                    setup_ok, setup_reason = validate_strategy_setup(
+                        action,
+                        entry_price,
+                        sl,
+                        final_state.get("strategy_hypothesis", {}),
+                        final_state.get("indicator_data", {}),
+                    )
+                    if not setup_ok:
+                        print(f"   ⛔ 전략 검증 실패: {setup_reason}")
+                        self.equity_curve.append({"time": str(current_time), "balance": self.balance, "action": "REJECTED"})
+                        continue
 
-                    # 1% 룰로 랏 계산
+                    # 리스크 퍼센트 룰로 랏 계산
                     from backend.features.trading.guardrails import enforce_one_percent_rule
-                    lot_size = enforce_one_percent_rule(self.balance, entry_price, sl)
+                    lot_size = enforce_one_percent_rule(self.balance, entry_price, sl, risk_pct=self.risk_per_trade_pct)
 
                     if lot_size <= 0:
                         print(f"   ⛔ 가드레일: 랏 사이즈 0 (SL 거리 이상)")
@@ -337,6 +352,7 @@ def main():
     parser.add_argument("--symbol", type=str, default="EURUSD", help="종목 코드 (기본: EURUSD)")
     parser.add_argument("--timeframes", type=str, default="M5", help="콤마로 구분된 타임프레임 (예: M5,H1)")
     parser.add_argument("--balance", type=float, default=DEFAULT_INITIAL_BALANCE, help="초기 잔고 (기본: 10000)")
+    parser.add_argument("--risk-pct", type=float, default=DEFAULT_RISK_PER_TRADE_PCT, help="거래당 계좌 리스크 비율 (기본: 0.005 = 0.5%)")
     parser.add_argument("--step", type=int, default=STEP_INTERVAL, help="파이프라인 호출 간격 (캔들 수, 기본: 5)")
     parser.add_argument("--report", action="store_true", help="백테스트 완료 후 리포트 자동 생성")
     args = parser.parse_args()
@@ -358,6 +374,7 @@ def main():
         symbol=args.symbol,
         timeframes=timeframes,
         initial_balance=args.balance,
+        risk_per_trade_pct=args.risk_pct,
         step_interval=args.step,
     )
 
@@ -372,6 +389,10 @@ def main():
             symbol=args.symbol,
             initial_balance=args.balance,
             final_balance=engine.balance,
+            chart_timeframe=engine.base_tf,
+            decision_timeframes=engine.timeframes,
+            step_interval=engine.step_interval,
+            risk_per_trade_pct=engine.risk_per_trade_pct,
         )
         print(f"\n📄 리포트 생성 완료: {report_path}")
     elif args.report and not trades:
@@ -387,6 +408,11 @@ def main():
                 "symbol": args.symbol,
                 "initial_balance": args.balance,
                 "final_balance": engine.balance,
+                "data_paths": [path.strip() for path in data_paths],
+                "timeframes": timeframes,
+                "base_timeframe": engine.base_tf,
+                "step_interval": engine.step_interval,
+                "risk_per_trade_pct": engine.risk_per_trade_pct,
                 "total_trades": len(trades),
                 "trades": trades,
                 "equity_curve": engine.equity_curve,

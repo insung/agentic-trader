@@ -83,20 +83,21 @@ def validate_order_prices(action: str, entry_price: float, sl_price: float, tp_p
 
     return (expected_profit / expected_loss) >= min_rr
 
-def enforce_one_percent_rule(account_balance: float, entry_price: float, sl_price: float) -> float:
+def enforce_one_percent_rule(account_balance: float, entry_price: float, sl_price: float, risk_pct: float = 0.01) -> float:
     """
-    Rule 1: 1% 룰 기반 최대 랏수 강제 계산기
-    - SL 도달 시 총 자산의 1%만 잃도록 안전한 랏(Lot) 사이즈를 역산하여 반환.
+    Rule 1: risk-percent 기반 최대 랏수 강제 계산기
+    - SL 도달 시 총 자산의 risk_pct만 잃도록 안전한 랏(Lot) 사이즈를 역산하여 반환.
     - AI가 요청한 Lot 수치는 무시되고 이 함수의 리턴값으로 덮어씌워짐.
+    - 기본값은 기존 1% 룰과 호환되는 0.01입니다.
     """
-    if account_balance <= 0:
+    if account_balance <= 0 or risk_pct <= 0:
         return 0.0
         
     price_diff = abs(entry_price - sl_price)
     if price_diff == 0:
         return 0.0
         
-    risk_amount = account_balance * 0.01
+    risk_amount = account_balance * risk_pct
     lot_size = risk_amount / price_diff
     
     # MT5 랏 단위에 맞춰 소수점 둘째 자리까지 반올림 (예: 0.01)

@@ -5,7 +5,7 @@
 """
 import os
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -19,6 +19,28 @@ import matplotlib.dates as mdates
 # reporting.py 위치: backend/features/trading/ → dirname 4번으로 프로젝트 루트 도달
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 DEFAULT_REPORT_DIR = os.path.join(PROJECT_ROOT, "backtests", "reports")
+
+
+def _infer_timeframe_from_df(df: pd.DataFrame) -> str:
+    """Infer a compact timeframe label from the report dataframe."""
+    if df.empty or "time" not in df.columns or len(df) < 2:
+        return "N/A"
+
+    times = pd.to_datetime(df["time"]).sort_values()
+    diffs = times.diff().dropna()
+    if diffs.empty:
+        return "N/A"
+
+    minutes = int(round(diffs.median().total_seconds() / 60))
+    if minutes <= 0:
+        return "N/A"
+    if minutes < 60:
+        return f"M{minutes}"
+    if minutes % 1440 == 0:
+        return f"D{minutes // 1440}"
+    if minutes % 60 == 0:
+        return f"H{minutes // 60}"
+    return f"{minutes}min"
 
 
 def _calculate_statistics(trades: List[Dict[str, Any]], initial_balance: float, final_balance: float) -> Dict[str, Any]:
@@ -81,13 +103,14 @@ def _generate_chart(
     equity_curve: List[Dict[str, Any]],
     symbol: str,
     output_dir: str,
+    chart_timeframe: str = "N/A",
 ) -> str:
     """
     가격 차트 위에 매매 타점을 표시하고, 자산 곡선(Equity Curve)을 하단에 배치한
     2-panel 차트를 생성합니다.
     """
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(16, 10), gridspec_kw={"height_ratios": [3, 1]}, sharex=False)
-    fig.suptitle(f"Backtest Result: {symbol}", fontsize=16, fontweight="bold")
+    fig.suptitle(f"Backtest Result: {symbol} | Chart TF: {chart_timeframe}", fontsize=16, fontweight="bold")
 
     # --- Panel 1: 가격 차트 + 매매 타점 ---
     ax1.plot(df["time"], df["close"], color="#4A90D9", linewidth=0.8, alpha=0.9, label="Close Price")
@@ -152,6 +175,10 @@ def generate_backtest_report(
     symbol: str,
     initial_balance: float,
     final_balance: float,
+    chart_timeframe: Optional[str] = None,
+    decision_timeframes: Optional[List[str]] = None,
+    step_interval: Optional[int] = None,
+    risk_per_trade_pct: Optional[float] = None,
     output_dir: str = DEFAULT_REPORT_DIR,
 ) -> str:
     """
@@ -161,9 +188,11 @@ def generate_backtest_report(
         생성된 마크다운 파일의 절대 경로.
     """
     stats = _calculate_statistics(trades, initial_balance, final_balance)
+    chart_timeframe = chart_timeframe or _infer_timeframe_from_df(df)
+    decision_timeframes = decision_timeframes or [chart_timeframe]
 
     # 차트 생성
-    chart_path = _generate_chart(df, trades, equity_curve, symbol, output_dir)
+    chart_path = _generate_chart(df, trades, equity_curve, symbol, output_dir, chart_timeframe)
     chart_filename = os.path.basename(chart_path)
 
     # 마크다운 리포트 생성
@@ -179,6 +208,12 @@ def generate_backtest_report(
         f.write(f"# 📊 Backtest Report: {symbol}\n\n")
         f.write(f"**생성일시**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  \n")
         f.write(f"**데이터 기간**: {data_start} ~ {data_end}  \n")
+        f.write(f"**차트 기준 분봉**: {chart_timeframe}  \n")
+        f.write(f"**의사결정 타임프레임**: {', '.join(decision_timeframes)}  \n")
+        if step_interval is not None:
+            f.write(f"**파이프라인 호출 간격**: {step_interval} candles  \n")
+        if risk_per_trade_pct is not None:
+            f.write(f"**거래당 리스크 한도**: {risk_per_trade_pct * 100:.2f}%  \n")
         f.write(f"**총 캔들 수**: {len(df)}  \n\n")
 
         # 핵심 통계 테이블

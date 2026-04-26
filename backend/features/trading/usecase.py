@@ -23,7 +23,8 @@ class TradeExecutionUseCase:
         order: Order, 
         current_loss_pct: float, 
         today_trade_count: int, 
-        account_balance: float
+        account_balance: float,
+        risk_per_trade_pct: float = 0.01,
     ) -> OrderResult:
         """
         Executes a trade after passing all strict guardrails.
@@ -40,8 +41,13 @@ class TradeExecutionUseCase:
         if not validate_order_prices(order.action.value, order.entry_price, order.sl_price, order.tp_price):
             raise GuardrailViolationError("Invalid SL/TP direction or Risk/Reward ratio (must be >= 2.0).")
 
-        # 4. Rule 1: Enforce 1% Rule for Lot Size
-        safe_lot_size = enforce_one_percent_rule(account_balance, order.entry_price, order.sl_price)
+        # 4. Rule 1: Enforce configured risk-percent Rule for Lot Size
+        safe_lot_size = enforce_one_percent_rule(
+            account_balance,
+            order.entry_price,
+            order.sl_price,
+            risk_pct=risk_per_trade_pct,
+        )
         if safe_lot_size <= 0:
             raise GuardrailViolationError("Calculated lot size is 0 or negative.")
         

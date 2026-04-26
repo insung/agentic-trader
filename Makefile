@@ -7,6 +7,7 @@ SYMBOL ?= EURUSD
 PORT ?= 8001
 WINEPREFIX ?= $(HOME)/.wine
 MODE ?= paper
+RISK_PCT ?= 0.005
 
 venv:
 	@echo "Checking virtual environment..."
@@ -67,11 +68,11 @@ backtest-fetch:
 		--to "$(TO)"
 
 # 백테스트 실행 (DATA 변수에 콤마로 구분된 여러 CSV 경로 지정 가능)
-# 예: make backtest-run DATA=backtests/data/EURUSD_M5_...csv,backtests/data/EURUSD_H1_...csv
+# 예: make backtest-run DATA=backtests/data/EURUSD_20250101-20250131_M15.csv,backtests/data/EURUSD_20250101-20250131_M30.csv TIMEFRAMES=M15,M30
 backtest-run: venv
-	@if [ -z "$(DATA)" ]; then echo "DATA is required. Example: make backtest-run DATA=backtests/data/EURUSD_M5.csv"; exit 1; fi
+	@if [ -z "$(DATA)" ]; then echo "DATA is required. Example: make backtest-run DATA=backtests/data/EURUSD_20250101-20250131_M15.csv"; exit 1; fi
 	@echo "Running agentic backtest using data: $(DATA)..."
-	$(VENV_BIN)/python -m backend.scripts.run_backtest --data $(DATA) --symbol $(SYMBOL) --timeframes $(TIMEFRAMES) --step $(STEP) --report
+	$(VENV_BIN)/python -m backend.scripts.run_backtest --data $(DATA) --symbol $(SYMBOL) --timeframes $(TIMEFRAMES) --risk-pct $(RISK_PCT) --step $(STEP) --report
 
 # 백테스트 데이터 및 결과 정리
 backtest-clean:

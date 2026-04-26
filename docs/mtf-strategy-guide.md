@@ -57,9 +57,10 @@ make backtest-fetch SYMBOL=BTCUSD FROM=2024-01-01 TO=2024-01-31 TIMEFRAMES=M5,H1
 
 # 2. 백테스트 실행 (데이터 파일 2개를 모두 주입)
 make backtest-run \
-  DATA=backtests/data/BTCUSD_M5_20240101_20240131.csv,backtests/data/BTCUSD_H1_20240101_20240131.csv \
+  DATA=backtests/data/BTCUSD_20240101-20240131_M5.csv,backtests/data/BTCUSD_20240101-20240131_H1.csv \
   SYMBOL=BTCUSD \
   TIMEFRAMES=M5,H1
 ```
 
 > **주의사항 (에러 방지):** `DATA` 파라미터에 파일 이름을 넘길 때는 반드시 `backtests/data/...` 와 같이 **디렉토리를 포함한 상대 경로 또는 절대 경로**를 정확히 입력해야 합니다. 단순 파일명만 적으면 "데이터 파일을 찾을 수 없습니다" 에러가 발생합니다.
+> CSV 파일명은 `SYMBOL_YYYYMMDD-YYYYMMDD_TIMEFRAME.csv` 형식을 사용합니다.

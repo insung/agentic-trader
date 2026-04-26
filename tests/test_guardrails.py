@@ -81,6 +81,9 @@ class TestGuardrails(unittest.TestCase):
         # 진입 1.1000, 손절 1.1100 (차이 0.0100)
         self.assertAlmostEqual(enforce_one_percent_rule(10000.0, 1.1000, 1.1100), 10000.0)
 
+        # 검증 단계에서는 거래당 리스크를 0.5% 등으로 낮춰 실험 가능
+        self.assertAlmostEqual(enforce_one_percent_rule(10000.0, 100.0, 90.0, risk_pct=0.005), 5.0)
+
     def test_validate_sl_tp_modification_limit(self):
         # Rule 5: 1회 수정 제한
         # 아직 수정되지 않은 경우 (0회) -> 수정 가능 (True)

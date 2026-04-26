@@ -94,7 +94,7 @@ curl -X POST http://localhost:8001/api/v1/trade/reconcile
 ### 백테스트 작동 원리 (Position-Based Logic)
 1. **과거 차트 자르기 (Window Slicing):** 현재 시점을 기준으로 과거 100개의 캔들만 잘라 AI에게 제공합니다. AI는 미래를 볼 수 없습니다.
 2. **실시간 API 가로채기 (Mocking):** 백테스터가 실시간 MT5 함수(`fetch_ohlcv`, `get_current_price`)를 가로채어 과거 캔들의 종가를 실시간 가격인 것처럼 속여 반환합니다.
-3. **포지션 보유:** Chief Trader가 BUY/SELL을 내면 1% 리스크 룰이 적용되고, 백테스터는 즉시 미래 전체를 훑어 결과를 확정하지 않습니다. 열린 포지션을 상태로 보유합니다.
+3. **포지션 보유:** Chief Trader가 BUY/SELL을 내면 설정된 거래당 리스크 룰이 적용되고, 백테스터는 즉시 미래 전체를 훑어 결과를 확정하지 않습니다. 열린 포지션을 상태로 보유합니다.
 4. **청산 판정:** 이후 Step들이 진행되면서 새로 지난 캔들의 high/low가 SL 또는 TP에 닿았는지 확인합니다. 청산되면 PnL을 잔고에 반영하고 그때 Risk Reviewer가 복기를 작성합니다.
 5. **종료 처리:** 백테스트 종료 시점까지 열린 포지션이 남아 있으면 마지막 캔들 종가로 `BACKTEST_END` 청산 처리하고 복기합니다.
 
@@ -106,21 +106,47 @@ curl -X POST http://localhost:8001/api/v1/trade/reconcile
 - **포지션 보유 중 Step:** 열린 포지션이 있으면 새 AI 판단을 실행하지 않고, 해당 Step까지 경과한 캔들로 기존 포지션의 SL/TP만 확인합니다.
 - **설정 변경:** 기본 Step Interval은 5캔들이며, 실행 시 `make backtest-run ... STEP=10`처럼 조절할 수 있습니다.
 
+### 백테스트 속도 튜닝
+백테스트는 각 Step마다 LangGraph와 LLM을 호출하므로, 기간이 길거나 `STEP`이 작을수록 오래 걸립니다. 빠른 실험에서는 데이터 기간을 짧게 잡고 `STEP`을 크게 설정한 뒤, 괜찮은 후보만 더 촘촘하게 검증합니다.
+
+권장 워크플로우:
+- **빠른 디버깅:** 3~7일 데이터, `STEP=20`
+- **전략 감 잡기:** 2주 데이터, `STEP=10`
+- **검증용:** 1개월 이상, `STEP=5`
+- **최종 검증:** 여러 달을 월별 CSV로 나눠 실행
+
+예시:
+```bash
+# 1주일치 데이터만 수집
+make backtest-fetch SYMBOL=BTCUSD FROM=2025-01-01 TO=2025-01-07 TIMEFRAMES=M15,M30
+
+# M15 기준 20캔들마다 한 번, 즉 약 5시간마다 AI 판단
+make backtest-run \
+  DATA=backtests/data/BTCUSD_20250101-20250107_M15.csv,backtests/data/BTCUSD_20250101-20250107_M30.csv \
+  SYMBOL=BTCUSD \
+  TIMEFRAMES=M15,M30 \
+  STEP=20 \
+  RISK_PCT=0.005
+```
+
+`STEP`을 키우면 속도는 빨라지지만 중간 신호를 놓칠 수 있습니다. 따라서 `STEP=20` 결과는 전략 후보를 거르는 용도로 쓰고, 최종 판단은 `STEP=5` 또는 더 짧은 기간의 `STEP=5` 재검증으로 확인합니다.
+
 ### 5-1. 과거 데이터 수집
 MT5 터미널이 실행 중인 상태에서 Wine Python을 통해 데이터를 수집합니다.
 ```bash
 make backtest-fetch SYMBOL=BTCUSD FROM=2024-01-01 TO=2024-01-31 TIMEFRAMES=M5
 ```
 - 데이터는 `backtests/data/` 디렉토리에 저장됩니다.
+- 파일명은 `SYMBOL_YYYYMMDD-YYYYMMDD_TIMEFRAME.csv` 형식입니다. 예: `BTCUSD_20240101-20240131_M5.csv`.
 
 ### 5-2. 백테스트 실행 및 리포트 생성
 수집된 CSV 파일을 지정하여 백테스트를 실행합니다. `make` 명령어에 파라미터를 전달할 때는 `변수명=값` 형태를 사용해야 합니다.
 ```bash
 # 기본 실행 방법 (DATA 변수 필수)
-make backtest-run DATA=backtests/data/BTCUSD_5_20240101_20240131.csv
+make backtest-run DATA=backtests/data/BTCUSD_20240101-20240131_M5.csv
 
 # 종목과 타임프레임을 명시적으로 주입하는 방법
-make backtest-run DATA=backtests/data/BTCUSD_5_20240101_20240131.csv SYMBOL=BTCUSD TIMEFRAMES=M5
+make backtest-run DATA=backtests/data/BTCUSD_20240101-20240131_M5.csv SYMBOL=BTCUSD TIMEFRAMES=M5
 ```
 - 완료 후 자동으로 차트와 마크다운 리포트가 생성됩니다.
 - 청산된 거래가 있으면 `trading_logs/review_*.md`도 생성됩니다. HOLD/WAIT 또는 포지션 미진입 Step은 복기 파일을 만들지 않습니다.

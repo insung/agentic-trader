@@ -10,7 +10,9 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from backend.workflows.state import AgentState
 from backend.features.trading.mt5_adapter import fetch_ohlcv, get_account_summary, execute_mock_order, get_current_price, is_mt5_available
 from backend.features.trading.guardrails import enforce_one_percent_rule, validate_order_prices
+from backend.features.trading.indicators import add_technical_indicators, build_indicator_snapshot
 from backend.features.trading.market_hours import is_market_open, get_market_status_message
+from backend.features.trading.strategy_validators import validate_strategy_setup
 
 # Pydantic Models for Structured Output
 class TechSummary(BaseModel):
@@ -125,15 +127,29 @@ def fetch_data_node(state: AgentState) -> Dict[str, Any]:
     raw_data = f"Account Info: {json.dumps(account_info)}\n"
     raw_data += f"Current Price: {json.dumps(current_price)}\n"
     
+    indicator_data: Dict[str, Any] = {}
     for tf in timeframes:
         df = fetch_ohlcv(symbol, tf, 100)
         if df.empty:
             print(f"❌ No OHLCV data for {symbol} on {tf}.")
             continue
-        recent_data = df.tail(10).to_json(orient='records')
+        enriched = add_technical_indicators(df)
+        snapshot = build_indicator_snapshot(df)
+        indicator_data[tf] = snapshot
+        recent_columns = [
+            "time", "open", "high", "low", "close", "tick_volume",
+            "ema20", "ema50", "atr14", "adx14",
+            "bb_mid20", "bb_upper20", "bb_lower20", "bb_width20", "rsi14",
+        ]
+        recent_columns = [col for col in recent_columns if col in enriched.columns]
+        recent_df = enriched.tail(10)[recent_columns].copy()
+        numeric_columns = recent_df.select_dtypes(include="number").columns
+        recent_df[numeric_columns] = recent_df[numeric_columns].round(6)
+        recent_data = recent_df.to_json(orient='records', date_format='iso')
         raw_data += f"\n[{tf} Timeframe Market Data (last 10 candles)]:\n{recent_data}\n"
+        raw_data += f"\n[{tf} Deterministic Indicator Snapshot]:\n{json.dumps(snapshot, ensure_ascii=False)}\n"
         
-    return {"raw_data": raw_data, "account_info": account_info, "error_flag": False}
+    return {"raw_data": raw_data, "account_info": account_info, "indicator_data": indicator_data, "error_flag": False}
 
 def tech_analyst_node(state: AgentState) -> Dict[str, Any]:
     """Node 2: Tech Analyst analyzes raw data and outputs a summary."""
@@ -186,6 +202,7 @@ def chief_trader_node(state: AgentState) -> Dict[str, Any]:
     # 전략 가설 + 계좌 정보를 함께 전달
     account_info = getattr(state, 'account_info', {})
     human_content = f"Here is the Strategy Hypothesis:\n{getattr(state, 'strategy_hypothesis', {})}\n\n"
+    human_content += f"Deterministic Indicator Data:\n{json.dumps(getattr(state, 'indicator_data', {}), ensure_ascii=False)}\n\n"
     human_content += f"Account Info: {json.dumps(account_info)}"
     messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_content)]
     
@@ -242,6 +259,15 @@ def execute_order_node(state: AgentState) -> Dict[str, Any]:
         return {"order_result": {"success": False, "error_message": "Could not get current price", "timestamp": datetime.now().isoformat()}}
     if not validate_order_prices(action, entry_price, sl, tp):
         return {"order_result": {"success": False, "error_message": "Guardrail: invalid SL/TP direction or risk/reward", "timestamp": datetime.now().isoformat()}}
+    setup_ok, setup_reason = validate_strategy_setup(
+        action,
+        entry_price,
+        sl,
+        getattr(state, "strategy_hypothesis", {}),
+        getattr(state, "indicator_data", {}),
+    )
+    if not setup_ok:
+        return {"order_result": {"success": False, "error_message": f"Guardrail: {setup_reason}", "timestamp": datetime.now().isoformat()}}
     lot_size = enforce_one_percent_rule(balance, entry_price, sl)
     
     if lot_size <= 0:

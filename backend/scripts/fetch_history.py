@@ -5,7 +5,7 @@ MT5 터미널에 연결하여 지정한 심볼·기간의 과거 OHLCV 데이터
 CSV 파일로 저장합니다.
 
 사용법 (Wine Python 환경에서):
-    python -m backend.scripts.fetch_history --symbol EURUSD --timeframe H1 --days 30
+    python -m backend.scripts.fetch_history --symbol EURUSD --timeframes H1 --days 30
 """
 import argparse
 import os
@@ -29,6 +29,15 @@ DEFAULT_OUTPUT_DIR = os.path.join(
     "backtests",
     "data",
 )
+
+
+def build_history_filename(symbol: str, timeframe: str, start: datetime, end: datetime) -> str:
+    """Return the canonical historical-data filename.
+
+    Format: SYMBOL_YYYYMMDD-YYYYMMDD_TIMEFRAME.csv
+    """
+    date_range = f"{start.strftime('%Y%m%d')}-{end.strftime('%Y%m%d')}"
+    return f"{symbol}_{date_range}_{timeframe.upper()}.csv"
 
 
 def fetch_and_save(
@@ -92,8 +101,7 @@ def fetch_and_save(
 
     # 저장
     os.makedirs(output_dir, exist_ok=True)
-    date_str = f"{utc_from.strftime('%Y%m%d')}_{utc_to.strftime('%Y%m%d')}"
-    filename = f"{symbol}_{timeframe_str}_{date_str}.csv"
+    filename = build_history_filename(symbol, timeframe_str, utc_from, utc_to)
     filepath = os.path.join(output_dir, filename)
     df.to_csv(filepath, index=False)
 

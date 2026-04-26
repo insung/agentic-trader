@@ -47,6 +47,7 @@ class AgentStateSchema(BaseModel):
     # Node 1: Fetch Data
     raw_data: str = ""
     account_info: Dict[str, Any] = Field(default_factory=dict)
+    indicator_data: Dict[str, Any] = Field(default_factory=dict)
     open_positions: List[Position] = Field(default_factory=list)
     
     # Node 2: Tech Analyst

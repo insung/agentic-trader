@@ -1,6 +1,6 @@
 # SQLite 테이블 스키마 레퍼런스
 
-이 문서는 Agentic Trader가 생성하는 SQLite 테이블을 컬럼 단위로 설명합니다. 운영 방법과 조회 명령은 [sqlite-storage.md](./sqlite-storage.md), 백테스트 실행 절차는 [backtesting-guide.md](./backtesting-guide.md)를 참고하십시오.
+이 문서는 Agentic Trader가 생성하는 SQLite 테이블을 컬럼 단위로 설명합니다. 운영 방법과 조회 명령은 [sqlite-storage.md](./sqlite-storage.md), 백테스트 실행 절차는 [backtesting-guide.md](../backtesting/backtesting-guide.md)를 참고하십시오.
 
 ## DB 파일
 
@@ -24,7 +24,7 @@ trading_logs/trading_logs.sqlite
 - 복잡한 LLM 판단 컨텍스트, 주문 원문, indicator snapshot은 JSON 문자열 컬럼에 저장합니다.
 - 백테스트 원천 캔들은 `symbol + timeframe + time` 조합으로 중복을 방지합니다.
 - 백테스트 실행 단위는 `run_id`, 운영 복기 단위는 `review_id`, 열린 포지션 단위는 `trade_id`를 자연 키로 사용합니다.
-- Markdown 리포트와 복기 본문은 사람이 읽을 수 있도록 파일로도 남기고, 검색과 보존을 위해 SQLite에도 저장합니다.
+- Markdown 리포트와 복기 본문은 사람이 읽을 수 있도록 파일로도 남기지만, 차트/분석 재구성은 SQLite source-of-truth를 기준으로 합니다.
 
 ## 관계 요약
 
@@ -118,11 +118,17 @@ trade_reviews          Risk Reviewer 복기 아카이브
 | `profit_factor` | `REAL` | nullable | 총 이익 / 총 손실 절대값입니다. 손실이 없으면 NULL일 수 있습니다. |
 | `max_drawdown_pct` | `REAL` | nullable | 백테스트 기간 최대 낙폭 비율입니다. |
 | `created_at` | `TEXT` | NOT NULL | 백테스트 실행 기록 생성 시각입니다. |
+| `status` | `TEXT` | NOT NULL, default `running` | 실행 상태입니다. 현재 코드에서는 `running`, `completed`, `interrupted`, `failed`를 사용합니다. |
+| `completed_at` | `TEXT` | nullable | 정상 종료, 중단, 실패가 기록된 시각입니다. |
+| `error_message` | `TEXT` | nullable | 중단 또는 실패 원인입니다. 예: `KeyboardInterrupt`, 예외 메시지. |
 
 갱신 동작:
 
-- 같은 `run_id`를 다시 저장하면 요약 지표만 갱신합니다.
-- 관련 `backtest_trades`, `backtest_decisions`, `lessons`는 해당 `run_id` 기준으로 삭제 후 다시 삽입합니다.
+- 현재 백테스트 실행 경로는 시작 직후 `backtest_runs` row를 `status='running'`으로 먼저 만들고, 종료 시 `final_balance`, `total_trades`, `net_pnl`, `profit_factor`, `max_drawdown_pct`, `status='completed'`, `completed_at`을 갱신합니다.
+- Ctrl-C 등 강제 중단은 `status='interrupted'`, 예상 밖 예외는 `status='failed'`로 기록합니다.
+- 실행 중 `backtest_decisions`는 판단마다 즉시 삽입되고, `backtest_trades`는 거래가 청산될 때 즉시 삽입됩니다.
+- 기존 DB에 새 컬럼이 없으면 애플리케이션 초기화 시 자동으로 컬럼을 추가합니다. 기존 완료 run은 `completed`, 최종 잔고가 없는 run은 `running`으로 분류합니다.
+- legacy 마이그레이션이나 일괄 저장 경로에서 같은 `run_id`를 다시 저장하면 관련 `backtest_trades`, `backtest_decisions`, `lessons`를 해당 `run_id` 기준으로 삭제 후 다시 삽입합니다.
 
 ### `backtest_trades`
 
@@ -206,7 +212,7 @@ trade_reviews          Risk Reviewer 복기 아카이브
 
 ### `backtest_reports`
 
-Markdown 백테스트 리포트 원문을 보존합니다. 차트 이미지는 DB에 바이너리로 넣지 않고 파일 경로만 저장합니다.
+Markdown 백테스트 리포트 원문을 보존하는 optional artifact 테이블입니다. 분석과 차트 재구성의 source of truth는 `candles`, `backtest_runs`, `backtest_trades`, `backtest_decisions`입니다.
 
 | 컬럼 | 타입 | 제약 | 설명 |
 | --- | --- | --- | --- |
@@ -214,12 +220,19 @@ Markdown 백테스트 리포트 원문을 보존합니다. 차트 이미지는 D
 | `report_id` | `TEXT` | NOT NULL, UNIQUE | 리포트 고유 ID입니다. 보통 파일명 기반입니다. |
 | `run_id` | `TEXT` | FK nullable | 연결된 백테스트 실행 ID입니다. legacy 리포트는 NULL일 수 있습니다. |
 | `symbol` | `TEXT` | NOT NULL | 리포트 대상 심볼입니다. |
-| `report_path` | `TEXT` | nullable | Markdown 파일 경로입니다. |
-| `chart_path` | `TEXT` | nullable | 차트 PNG 파일 경로입니다. |
+| `report_path` | `TEXT` | nullable | 과거 호환용 artifact 경로입니다. 신규 저장 경로에서는 NULL로 둡니다. |
+| `chart_path` | `TEXT` | nullable | 과거 호환용 차트 artifact 경로입니다. 신규 저장 경로에서는 NULL로 둡니다. |
 | `report_created_at` | `TEXT` | nullable | 리포트 본문 또는 파일에서 추출한 생성 시각입니다. |
-| `markdown_body` | `TEXT` | NOT NULL | 리포트 Markdown 전체 본문입니다. |
+| `markdown_body` | `TEXT` | NOT NULL | 리포트 Markdown 전체 본문입니다. 캐시/아카이브 용도이며 분석 기준은 아닙니다. |
 | `summary_json` | `TEXT` | nullable | 리포트 요약 메타데이터 JSON입니다. |
 | `created_at` | `TEXT` | NOT NULL | SQLite에 저장한 시각입니다. |
+
+차트 재생성:
+
+- `backtest_runs.run_id`로 실행 메타데이터를 찾습니다.
+- `symbol`, `base_timeframe`, `data_from`, `data_to` 기준으로 `candles`를 조회합니다.
+- `backtest_trades`를 진입/청산 marker로 overlay합니다.
+- `backtest_decisions`를 판단/차단 audit layer로 overlay합니다.
 
 ## 운영/복기 DB
 
@@ -326,7 +339,14 @@ sqlite3 -header -column backtests/data/market_data.sqlite \
 
 ```bash
 sqlite3 -header -column backtests/data/market_data.sqlite \
-  "SELECT r.run_id, r.symbol, r.timeframes, r.data_from, r.data_to, r.total_trades, ROUND(r.net_pnl, 2) AS net_pnl FROM backtest_runs r ORDER BY r.created_at DESC LIMIT 10;"
+  "SELECT r.run_id, r.status, r.symbol, r.timeframes, r.data_from, r.data_to, r.total_trades, ROUND(r.net_pnl, 2) AS net_pnl FROM backtest_runs r ORDER BY r.created_at DESC LIMIT 10;"
+```
+
+완료된 백테스트만 보기:
+
+```bash
+sqlite3 -header -column backtests/data/market_data.sqlite \
+  "SELECT r.run_id, r.symbol, r.timeframes, r.total_trades, ROUND(r.net_pnl, 2) AS net_pnl FROM backtest_runs r WHERE r.status = 'completed' ORDER BY r.created_at DESC LIMIT 10;"
 ```
 
 validator 차단 사유:

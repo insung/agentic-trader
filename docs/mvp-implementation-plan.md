@@ -8,19 +8,29 @@
 agentic-trader/
 ├── .agents/                 # AI 시스템 프롬프트 저장소
 │   ├── agents/              # 각 노드(Tech Analyst, Chief Trader 등)의 프롬프트 템플릿
-│   └── rules/               # 글로벌 프롬프트 룰
+│   └── workflows/           # Human/AI workflow notes, not runtime orchestrators
 ├── backend/                 # 자체 개발 Trading API & Orchestrator (FastAPI)
 │   ├── api/                 # 외부 요청(Webhook) 및 크론 스케줄러 라우터
-│   ├── core/                # 절대 방어 로직 (1% 룰, 손실 제한 등 가드레일)
+│   ├── core/                # Pydantic state/model, 예외, cross-cutting contract
+│   ├── features/trading/    # 지표, 가드레일, MT5 adapter, 전략 validator
+│   ├── scripts/             # 백테스트, 데이터 수집, 마이그레이션 스크립트
 │   ├── services/            # MT5 데이터 수집, 지표 연산(pandas-ta)
 │   ├── workflows/           # LangGraph 파이프라인 (상태 머신)
 │   │   ├── graph.py         # 노드와 엣지 정의
 │   │   ├── nodes.py         # 각 에이전트의 로직 (LLM 호출 포함)
 │   │   └── state.py         # 노드 간 주고받는 상태(State) 스키마
 │   └── main.py              # FastAPI 서버 실행 진입점 (Wine 내부 구동)
-├── docs/                    # 아키텍처 설계 문서
-├── strategies/              # 순수 파이썬 기술적 지표 및 수학 로직
+├── docs/                    # 아키텍처, 실행 가이드, 저장소, 전략 문서
+│   ├── README.md            # 문서 색인
+│   ├── architecture/        # 비전, 시스템 플로우, 에이전트 워크플로우
+│   ├── backtesting/         # 백테스트 실행 절차
+│   ├── guides/              # 운영/테스트/MT5 실행 가이드
+│   ├── storage/             # SQLite 스키마, replayable data 원칙
+│   ├── strategy/            # 전략 작성/MTF 가이드
+│   └── trading-strategies/  # 런타임에 주입되는 전략 지식 파일
 ├── tests/                   # 단위 테스트 및 백테스트
+├── backtests/               # ignored generated data/results/reports
+├── trading_logs/            # ignored generated trade reviews/state
 └── requirements.txt         # 파이썬 의존성 패키지 목록
 ```
 
@@ -30,7 +40,7 @@ agentic-trader/
 현재 "아이디어 구체화 및 설계" 단계를 마치고, MVP 구현을 위한 실행 로드맵에 따라 개발을 진행합니다. Codex, Gemini CLI, Google Antigravity 등 어떤 AI 도구를 쓰더라도 root `AGENTS.md`를 공통 SSOT로 삼고, TDD gate와 FastAPI/LangGraph/deterministic guardrail 원칙을 동일하게 적용합니다.
 
 ### Phase 0: 기반 세팅 및 뼈대 구축 (완료)
-*   [x] 프로젝트 구조 및 아키텍처 설계 (`README.md`, `docs/vision-and-philosophy.md`, `AGENTS.md` 등)
+*   [x] 프로젝트 구조 및 아키텍처 설계 (`README.md`, `docs/architecture/vision-and-philosophy.md`, `AGENTS.md` 등)
 *   [x] Linux Mint + Wine 환경에서 MetaTrader 5 설치 및 데모 계정 연동
 *   [x] FastAPI 백엔드 뼈대 코드(Boilerplate) 및 핵심 `TODO` 주석 구성
 
@@ -79,6 +89,7 @@ agentic-trader/
     *   [x] ATR14 대비 SL 거리가 너무 좁은 주문을 차단합니다. 기본 최소값은 `1.0 ATR`입니다.
     *   [x] 검증 단계의 기본 백테스트 리스크를 거래당 `0.5%`로 낮추고, `--risk-pct` 및 Makefile `RISK_PCT`로 조정 가능하게 했습니다. 실전/Paper는 `RISK_PER_TRADE_PCT` 환경 변수로 조정합니다.
     *   [x] 백테스트 리포트와 원본 JSON에 차트 기준 타임프레임, 의사결정 타임프레임, 호출 간격, 거래당 리스크 한도를 기록합니다.
+    *   [x] MA Crossover validator에 Bollinger/RSI/ATR 기반 late-chase 차단을 추가했습니다. 추세는 맞더라도 이미 하단/상단 밴드에 너무 가까운 후반 추격 진입은 차단합니다.
 *   **검증 결과:**
     *   기존 BTCUSD 손실 리포트의 4개 진입은 새 validator 기준으로 모두 차단됩니다.
         *   Trade #1, #2: SL 거리가 ATR14 대비 너무 좁음.
@@ -94,11 +105,17 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
 
 ### 현재 부족한 부분 요약 (2026-04 기준)
 *   **백테스트 속도와 재현성:** 현재 백테스트는 각 Step마다 LangGraph와 LLM을 호출하므로 느리고, 같은 데이터라도 LLM 응답/외부 API 상태에 따라 결과가 흔들릴 수 있습니다. 빠른 반복 실험을 위해 LLM 응답 캐시, deterministic replay, `--from/--to`, `--max-steps` 같은 부분 실행 옵션이 필요합니다.
-*   **성과 데이터의 구조화 부족:** 리포트는 사람이 읽기 좋지만, 전략별/기간별/타임프레임별 성과를 누적 비교하기에는 아직 부족합니다. 백테스트 OHLCV와 실행 결과는 `backtests/data/market_data.sqlite`에 저장하기 시작했으며, 다음 단계는 `strategy`, `symbol`, `timeframe`, `risk_pct`, `step`, `win_rate`, `profit_factor`, `max_drawdown`, `blocked_reason` 기반의 비교 리포트를 강화하는 것입니다.
+*   **성과 비교/재생 UI 부족:** 백테스트 OHLCV, 실행 run, trade, decision은 SQLite에 구조화되었고, 리포트 path 없이도 `run_id` 기준 차트 재생성이 가능해졌습니다. 다음 단계는 이 데이터를 사용해 전략별/기간별/타임프레임별 성과 비교 화면과 blocked-trade audit 리포트를 만드는 것입니다.
 *   **전략 검증은 시작 단계:** MA/Bollinger validator는 생겼지만, 아직 전략별 파라미터 튜닝, walk-forward 검증, out-of-sample 검증, 비용/스프레드/슬리피지 반영이 부족합니다. 현재 결과는 실제 체결 환경보다 낙관적일 수 있습니다.
 *   **운영 상태 저장이 취약:** 열린 포지션과 복기 상태가 로컬 JSON 중심이라 재시작/동시 실행/중복 처리에 취약합니다. 운영 단계에서는 SQLite 이상으로 옮겨 원자적 업데이트와 중복 방지를 보장해야 합니다.
 *   **세션 간 실행 기억 구조화 부족:** `AGENTS.md`를 Codex/Gemini/Antigravity 공통 SSOT로 정리했지만, 최근 실험 결과와 운영 지표는 아직 Markdown/JSON 중심입니다. 향후 SQLite/Vector DB 기반의 검색 가능한 기억 구조가 필요합니다.
 *   **관측 가능성 부족:** 주문 차단 사유, LLM 판단, validator 통과/실패, MT5 응답, reconcile 결과를 한눈에 보는 로그/대시보드/알림 체계가 필요합니다.
+
+### 문서 구조 정리 (2026-04-27 반영)
+*   [x] `docs/README.md`를 문서 색인으로 추가하고, 문서를 `architecture/`, `backtesting/`, `guides/`, `storage/`, `strategy/` 하위 디렉터리로 분류했습니다.
+*   [x] 런타임 전략 지식 파일은 코드가 동적으로 참조하는 경로이므로 `docs/trading-strategies/`에 유지합니다.
+*   [x] `AGENTS.md`, `README.md`, 이 문서의 새 세션 시작 경로를 재분류된 문서 구조에 맞춰 갱신했습니다.
+*   [x] 백테스트 DB 저장 개선, optional report artifact, runtime candle persistence 원칙을 `docs/backtesting/`, `docs/storage/`, `docs/guides/` 문서에 나누어 반영했습니다.
 
 ### AI 세션 지식 축적 프로토콜 (필수 운영 규칙)
 새 AI 세션이 매번 프로젝트를 처음부터 다시 추론하지 않도록, 지식을 다음 3층으로 나누어 축적합니다.
@@ -114,16 +131,17 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
     *   새 세션은 `AGENTS.md` 다음으로 이 문서를 읽어 “지금 어디까지 왔는지”를 파악합니다.
 3.  **실험/운영 지식:** `backtests/data/market_data.sqlite`, `trading_logs/trading_logs.sqlite`, `trading_logs/`, `backtests/reports/`
     *   개별 매매 복기, 백테스트 리포트, validator 차단 사유, 성과 통계는 여기에 축적합니다.
-    *   향후에는 마크다운뿐 아니라 SQLite/Vector DB에 구조화하여, Chief Trader와 새 AI 세션이 검색 가능한 기억으로 사용합니다.
+    *   차트와 성과 분석은 Markdown/PNG 경로가 아니라 SQLite source-of-truth에서 재구성합니다.
+    *   향후에는 SQLite 구조화 데이터와 Vector DB를 결합하여, Chief Trader와 새 AI 세션이 검색 가능한 기억으로 사용합니다.
 
 새 세션 시작 시 권장 로드 순서:
 1.  `AGENTS.md`
 2.  `README.md`
-3.  `docs/vision-and-philosophy.md`
+3.  `docs/architecture/vision-and-philosophy.md`
 4.  `docs/mvp-implementation-plan.md`
 5.  최근 변경 확인: `git status --short`, `git log --oneline -5`
-6.  현재 작업이 테스트 관련이면 `docs/testing-guide.md`
-7.  백테스트/운영 관련이면 `docs/backtesting-guide.md`, `docs/execution-guide.md`, `docs/live-operation-runbook.md`
+6.  현재 작업이 테스트 관련이면 `docs/guides/testing-guide.md`
+7.  백테스트/운영 관련이면 `docs/backtesting/backtesting-guide.md`, `docs/guides/execution-guide.md`, `docs/guides/live-operation-runbook.md`
 8.  전략 관련이면 `docs/trading-strategies/`, `backend/config/strategies_config.json`, `backend/features/trading/strategy_validators.py`
 
 작업 종료 시 handoff 규칙:
@@ -147,6 +165,10 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
     *   [x] 과거 OHLCV 데이터를 CSV 기본 저장에서 SQLite upsert 저장으로 전환합니다. `candles`는 `symbol + timeframe + time` 고유 키로 중복을 방지합니다.
     *   [x] 백테스트 실행을 `symbol/timeframes/from/to` 기반 SQLite 기간 조회로 전환하고, 기존 CSV 입력은 임시 호환 경로로 유지합니다.
     *   [x] 백테스트 실행 결과, 거래, validator 차단/HOLD 의사결정을 SQLite 테이블에 저장합니다.
+    *   [x] 백테스트 종료 후 일괄 저장하던 결과 저장 흐름을 보강하여, 실행 시작 시 `backtest_runs` row를 먼저 만들고 실행 중 decision/trade를 즉시 SQLite에 누적 저장합니다. 종료 시에는 요약 지표만 갱신합니다.
+    *   [x] 강제 종료/예외 종료 run을 성과 집계에서 구분할 수 있도록 `backtest_runs.status`를 추가했습니다. 정상 종료는 `completed`, Ctrl-C는 `interrupted`, 예외는 `failed`로 기록합니다.
+    *   [x] `backtest_reports.report_path/chart_path`를 source-of-truth에서 제외하고 optional artifact로 낮췄습니다. 신규 저장은 path를 NULL로 두고, 차트는 candles/runs/trades/decisions에서 재생성합니다.
+    *   [x] 실전/Paper 실행에서 `PERSIST_MARKET_CANDLES=1`을 설정하면 판단에 사용한 OHLCV를 market data SQLite에 upsert하여 백테스트와 같은 방식으로 재사용할 수 있게 했습니다.
     *   [x] 기존 CSV/JSON/Markdown 산출물을 SQLite로 옮기는 `make migrate-legacy-data` 경로를 추가합니다.
     *   `run_backtest.py`에 `--from`, `--to`, `--max-steps`, `--no-review` 옵션을 추가하여 짧은 디버그 실행과 긴 검증 실행을 분리합니다.
     *   동일한 `(symbol, timeframes, candle_time, raw_data, prompt_version)` 조합의 LLM 응답을 캐시하여 반복 백테스트 비용과 시간을 줄입니다.

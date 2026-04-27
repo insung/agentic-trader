@@ -240,11 +240,16 @@ def migrate_backtest_reports(backtest_dir: str, db_path: str) -> int:
             report_id=report_id,
             run_id=None,
             symbol=_extract_report_symbol(body, path),
-            report_path=path,
-            chart_path=_extract_chart_path(body, path),
+            report_path=None,
+            chart_path=None,
             report_created_at=_extract_date(body),
             markdown_body=body,
-            summary_json={"source": "legacy_markdown"},
+            summary_json={
+                "source": "legacy_markdown",
+                "artifact_path_ignored": True,
+                "legacy_report_filename": os.path.basename(path),
+                "legacy_chart_filename": os.path.basename(_extract_chart_path(body, path) or ""),
+            },
         )
         migrated += 1
     return migrated

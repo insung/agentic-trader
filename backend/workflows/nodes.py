@@ -13,6 +13,7 @@ from backend.features.trading.guardrails import enforce_one_percent_rule, valida
 from backend.features.trading.indicators import add_technical_indicators, build_indicator_snapshot
 from backend.features.trading.market_hours import is_market_open, get_market_status_message
 from backend.features.trading.strategy_validators import validate_strategy_setup
+from backend.features.trading.backtest_store import DEFAULT_BACKTEST_DB_PATH, upsert_candles
 from backend.features.trading.trading_log_store import store_trade_review, DEFAULT_TRADING_LOG_DB_PATH
 
 # Pydantic Models for Structured Output
@@ -100,6 +101,17 @@ def _read_strategies(market_regime: str = "Ranging", current_timeframes: List[st
         
     return strategies_text
 
+
+def _persist_runtime_candles(symbol: str, timeframe: str, df) -> None:
+    """Optionally archive live/paper OHLCV snapshots for replayable trade reviews."""
+    if os.getenv("PERSIST_MARKET_CANDLES", "0").lower() not in {"1", "true", "yes", "on"}:
+        return
+    db_path = os.getenv("MARKET_DATA_DB_PATH", DEFAULT_BACKTEST_DB_PATH)
+    try:
+        upsert_candles(db_path, symbol, timeframe, df)
+    except Exception as exc:
+        print(f"⚠️ Runtime candle persistence failed for {symbol} {timeframe}: {exc}")
+
 def fetch_data_node(state: AgentState) -> Dict[str, Any]:
     """Node 1: Fetch OHLCV Data and calculate indicators."""
     print("[Node 1] fetch_data_node executed")
@@ -134,6 +146,7 @@ def fetch_data_node(state: AgentState) -> Dict[str, Any]:
         if df.empty:
             print(f"❌ No OHLCV data for {symbol} on {tf}.")
             continue
+        _persist_runtime_candles(symbol, tf, df)
         enriched = add_technical_indicators(df)
         snapshot = build_indicator_snapshot(df)
         indicator_data[tf] = snapshot

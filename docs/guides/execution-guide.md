@@ -1,6 +1,6 @@
 # Execution Guide
 
-이 문서는 Agentic Trader를 로컬에서 실행하고, Paper/Live 트레이딩 파이프라인을 구동하는 절차를 정리합니다. 테스트 절차는 [testing-guide.md](./testing-guide.md), 백테스트 절차는 [backtesting-guide.md](./backtesting-guide.md)를 참고하십시오.
+이 문서는 Agentic Trader를 로컬에서 실행하고, Paper/Live 트레이딩 파이프라인을 구동하는 절차를 정리합니다. 테스트 절차는 [testing-guide.md](./testing-guide.md), 백테스트 절차는 [backtesting-guide.md](../backtesting/backtesting-guide.md)를 참고하십시오.
 
 ## Prerequisites
 
@@ -63,6 +63,10 @@ CLI는 심볼, 타임프레임, paper/live 모드를 선택하고 `/api/v1/trade
 7. Position Tracking: 로컬 파일과 `trading_logs/trading_logs.sqlite`에 열린 포지션 기록
 8. Post-Close Review: 청산 후 `trading_logs/review_*.md` 및 SQLite `trade_reviews` 기록
 
+실전/Paper 판단에 사용한 OHLCV를 장기 보존하려면 서버 실행 시 `PERSIST_MARKET_CANDLES=1`을 설정합니다. 저장 위치는 기본적으로 `backtests/data/market_data.sqlite`이며, `MARKET_DATA_DB_PATH`로 바꿀 수 있습니다. 이렇게 저장한 M5/M15/M30 candles는 백테스트와 같은 방식으로 차트 재생성, 진입/청산 marker overlay, 사후 복기에 재사용합니다.
+
+데이터 재생성 원칙은 [replayable-trading-data.md](../storage/replayable-trading-data.md)를 기준으로 관리합니다.
+
 ## Reconcile Closed Positions
 
 서버에는 기본 30초 간격의 자동 reconcile 루프가 있습니다. 간격은 서버 실행 전 환경 변수로 조절합니다.
@@ -89,7 +93,7 @@ curl -X POST http://localhost:8001/api/v1/trade/reconcile
 
 백테스트는 실제 LangGraph agent pipeline을 과거 데이터 위에서 실행합니다. 단순 룰 백테스트가 아니라 각 step에서 LLM 판단, Python guardrail, deterministic strategy gate를 함께 검증합니다.
 
-실행 체크리스트, `make backtest-fetch`, `make backtest-run`, `RISK_PCT`, 여러 달 기간 조회, 결과 확인 방법은 [backtesting-guide.md](./backtesting-guide.md)를 기준 문서로 관리합니다. SQLite 저장소 구조와 조회 쿼리는 [sqlite-storage.md](./sqlite-storage.md)를 참고하십시오.
+실행 체크리스트, `make backtest-fetch`, `make backtest-run`, `RISK_PCT`, 여러 달 기간 조회, 결과 확인 방법은 [backtesting-guide.md](../backtesting/backtesting-guide.md)를 기준 문서로 관리합니다. SQLite 저장소 구조와 조회 쿼리는 [sqlite-storage.md](../storage/sqlite-storage.md)를 참고하십시오.
 
 ## Strategy Changes
 

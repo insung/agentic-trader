@@ -16,6 +16,9 @@ class StrategyGateConfig:
     max_cross_age_bars: int = 6
     min_sl_atr: float = 1.0
     ma_band_tolerance: float = 0.003
+    ma_late_chase_band_atr: float = 0.5
+    ma_late_chase_sell_rsi: float = 45.0
+    ma_late_chase_buy_rsi: float = 55.0
     bb_lookback_rows: int = 10
     bb_band_tolerance: float = 0.0015
 
@@ -89,6 +92,25 @@ def _ma_is_exhausted_band_entry(action: str, latest: Dict[str, Any], config: Str
     return False, ""
 
 
+def _ma_is_late_band_chase(action: str, latest: Dict[str, Any], config: StrategyGateConfig) -> Tuple[bool, str]:
+    close = latest.get("close")
+    atr = latest.get("atr14")
+    upper = latest.get("bb_upper20")
+    lower = latest.get("bb_lower20")
+    rsi = latest.get("rsi14")
+    if not all(value is not None for value in (close, atr, upper, lower, rsi)):
+        return False, ""
+    if atr <= 0:
+        return False, ""
+
+    band_room = config.ma_late_chase_band_atr * atr
+    if action == "SELL" and close <= lower + band_room and rsi <= config.ma_late_chase_sell_rsi:
+        return True, "late SELL chase near lower Bollinger band"
+    if action == "BUY" and close >= upper - band_room and rsi >= config.ma_late_chase_buy_rsi:
+        return True, "late BUY chase near upper Bollinger band"
+    return False, ""
+
+
 def _validate_ma_crossover(action: str, snapshot: Dict[str, Any], indicator_data: Dict[str, Any], config: StrategyGateConfig) -> Tuple[bool, str]:
     latest = snapshot.get("latest", {})
     close = latest.get("close")
@@ -123,6 +145,10 @@ def _validate_ma_crossover(action: str, snapshot: Dict[str, Any], indicator_data
     is_exhausted, exhaustion_reason = _ma_is_exhausted_band_entry(action, latest, config)
     if is_exhausted:
         return False, exhaustion_reason
+
+    is_late_chase, late_chase_reason = _ma_is_late_band_chase(action, latest, config)
+    if is_late_chase:
+        return False, late_chase_reason
 
     return True, "MA Crossover setup confirmed by EMA position, recent cross, and ADX"
 

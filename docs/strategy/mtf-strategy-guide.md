@@ -50,7 +50,7 @@ Agentic Trader의 MTF 엔진은 다음과 같이 작동합니다:
 ## 4. 백테스트 및 실행 방법
 
 다중 타임프레임 백테스트를 실행할 때는, 먼저 요구되는 타임프레임들의 과거 데이터를 SQLite에 적재한 뒤 같은 기간으로 조회합니다.
-일반적인 백테스트 체크리스트와 `RISK_PCT` 의미는 [backtesting-guide.md](./backtesting-guide.md)를 기준으로 확인하고, 이 문서에는 MTF 예시만 둡니다.
+일반적인 백테스트 체크리스트와 `RISK_PCT` 의미는 [backtesting-guide.md](../backtesting/backtesting-guide.md)를 기준으로 확인하고, 이 문서에는 MTF 예시만 둡니다.
 
 ```bash
 # 1. 데이터 다운로드 (M5, H1 동시 다운로드)

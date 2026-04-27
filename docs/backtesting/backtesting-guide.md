@@ -83,8 +83,13 @@ make backtest-run \
 성공 기준:
 
 - `backtests/data/market_data.sqlite`에서 캔들을 읽어 백테스트가 시작됩니다.
-- 결과가 `backtests/reports/`, `backtests/results/`, SQLite 결과 테이블에 기록됩니다.
-- validator가 차단한 판단은 `backtest_decisions`에 `REJECTED`로 저장됩니다.
+- 백테스트 시작 직후 `backtest_runs`에 실행 row가 먼저 생성됩니다.
+- 실행 중 각 판단은 `backtest_decisions`에 즉시 저장되고, 청산된 거래는 `backtest_trades`에 즉시 저장됩니다.
+- 종료 시 최종 잔고, 거래 수, PnL 같은 요약값이 `backtest_runs`에 갱신되고 `status='completed'`가 됩니다.
+- Ctrl-C 등으로 중단하면 `status='interrupted'`, 예외 종료면 `status='failed'`로 남습니다. 미완료 run은 성과 집계에서 제외합니다.
+- 리포트와 JSON 산출물은 종료 후 `backtests/reports/`, `backtests/results/`, SQLite 리포트 테이블에 기록됩니다.
+- SQLite `backtest_reports`는 Markdown 본문과 요약 캐시만 저장하고, `report_path`/`chart_path`는 신규 저장 시 NULL로 둡니다. 차트는 `run_id` 기준으로 candles/trades/decisions에서 다시 그리는 것을 기준으로 합니다.
+- validator가 차단한 판단은 실행 중에도 `backtest_decisions`에 `REJECTED`로 저장됩니다.
 
 5. 새 기간 데이터 수집 후 백테스트 실행
 
@@ -158,13 +163,20 @@ trading_logs/trading_logs.sqlite
 
 ## 자주 쓰는 조회 쿼리
 
-상세 스키마와 추가 조회 예시는 [sqlite-storage.md](./sqlite-storage.md)를 기준으로 관리합니다. 여기서는 백테스트 후 바로 확인할 최소 쿼리만 둡니다.
+상세 스키마와 추가 조회 예시는 [sqlite-storage.md](../storage/sqlite-storage.md)를 기준으로 관리합니다. 여기서는 백테스트 후 바로 확인할 최소 쿼리만 둡니다.
 
 최근 백테스트 실행:
 
 ```bash
 sqlite3 -header -column backtests/data/market_data.sqlite \
-  "SELECT run_id, symbol, timeframes, data_from, data_to, total_trades, net_pnl FROM backtest_runs ORDER BY created_at DESC LIMIT 10;"
+  "SELECT run_id, status, symbol, timeframes, data_from, data_to, total_trades, net_pnl FROM backtest_runs ORDER BY created_at DESC LIMIT 10;"
+```
+
+완료된 백테스트만 보기:
+
+```bash
+sqlite3 -header -column backtests/data/market_data.sqlite \
+  "SELECT run_id, symbol, timeframes, total_trades, net_pnl, profit_factor FROM backtest_runs WHERE status = 'completed' ORDER BY created_at DESC LIMIT 10;"
 ```
 
 전략별 손익:
@@ -183,6 +195,7 @@ sqlite3 -header -column backtests/data/market_data.sqlite \
 
 ## 참고 문서
 
-- SQLite 저장소 구조: [sqlite-storage.md](./sqlite-storage.md)
-- 전체 실행 가이드: [execution-guide.md](./execution-guide.md)
-- 테스트 정책: [testing-guide.md](./testing-guide.md)
+- SQLite 저장소 구조: [sqlite-storage.md](../storage/sqlite-storage.md)
+- 재생 가능한 트레이딩 데이터 원칙: [replayable-trading-data.md](../storage/replayable-trading-data.md)
+- 전체 실행 가이드: [execution-guide.md](../guides/execution-guide.md)
+- 테스트 정책: [testing-guide.md](../guides/testing-guide.md)

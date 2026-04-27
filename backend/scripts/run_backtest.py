@@ -22,8 +22,12 @@ import pandas as pd
 from backend.features.trading.backtest_store import (
     DEFAULT_BACKTEST_DB_PATH,
     calculate_candle_quality,
+    finish_backtest_run,
     load_candles,
-    persist_backtest_result,
+    mark_backtest_run_status,
+    record_backtest_decision,
+    record_backtest_trade,
+    start_backtest_run,
     store_backtest_report,
 )
 from backend.features.trading.guardrails import validate_order_prices
@@ -105,6 +109,8 @@ class BacktestEngine:
         initial_balance: float = DEFAULT_INITIAL_BALANCE,
         risk_per_trade_pct: float = DEFAULT_RISK_PER_TRADE_PCT,
         step_interval: int = STEP_INTERVAL,
+        result_db_path: Optional[str] = None,
+        run_id: Optional[str] = None,
     ):
         self.data_paths = data_paths or []
         self.symbol = symbol
@@ -113,6 +119,8 @@ class BacktestEngine:
         self.balance = initial_balance
         self.risk_per_trade_pct = risk_per_trade_pct
         self.step_interval = step_interval
+        self.result_db_path = result_db_path
+        self.run_id = run_id
 
         # 전체 과거 데이터 로드
         self.dfs = dfs or {}
@@ -153,18 +161,19 @@ class BacktestEngine:
         final_state = final_state or {}
         strategy_hypothesis = final_state.get("strategy_hypothesis", {}) or {}
         tech_summary = final_state.get("tech_summary", {}) or {}
-        self.decisions.append(
-            {
-                "decision_time": str(current_time),
-                "action": str(action).upper(),
-                "strategy": strategy_hypothesis.get("selected_strategy"),
-                "market_regime": tech_summary.get("market_regime") or strategy_hypothesis.get("market_condition"),
-                "status": status,
-                "rejection_reason": rejection_reason,
-                "indicator_snapshot": final_state.get("indicator_data", {}),
-                "final_order": final_order or final_state.get("final_order", {}),
-            }
-        )
+        decision = {
+            "decision_time": str(current_time),
+            "action": str(action).upper(),
+            "strategy": strategy_hypothesis.get("selected_strategy"),
+            "market_regime": tech_summary.get("market_regime") or strategy_hypothesis.get("market_condition"),
+            "status": status,
+            "rejection_reason": rejection_reason,
+            "indicator_snapshot": final_state.get("indicator_data", {}),
+            "final_order": final_order or final_state.get("final_order", {}),
+        }
+        self.decisions.append(decision)
+        if self.result_db_path and self.run_id:
+            record_backtest_decision(self.result_db_path, run_id=self.run_id, decision=decision)
 
     def _build_mock_ohlcv(self, window: pd.DataFrame) -> pd.DataFrame:
         """과거 데이터의 특정 윈도우를 fetch_ohlcv가 반환하는 형태로 가공합니다."""
@@ -241,6 +250,17 @@ class BacktestEngine:
     def _review_closed_trade(self, closed_trade: Dict[str, Any]) -> None:
         review_closed_trade(closed_trade.get("decision_context", {}), closed_trade)
 
+    def _record_closed_trade(self, closed_trade: Dict[str, Any]) -> None:
+        self.trades.append(closed_trade)
+        if self.result_db_path and self.run_id:
+            record_backtest_trade(
+                self.result_db_path,
+                run_id=self.run_id,
+                symbol=self.symbol,
+                trade=closed_trade,
+            )
+        self._review_closed_trade(closed_trade)
+
     def _close_open_position_at_end(self) -> None:
         if not self.open_position:
             return
@@ -253,8 +273,7 @@ class BacktestEngine:
             "Backtest End",
             float(last_candle["close"]),
         )
-        self.trades.append(closed)
-        self._review_closed_trade(closed)
+        self._record_closed_trade(closed)
         self.open_position = None
         print(
             f"   ⏹ {closed['action']} @ {closed['entry_price']:.5f} → "
@@ -321,8 +340,7 @@ class BacktestEngine:
                         closed_trade = self._evaluate_open_position(self.open_position, elapsed_candles)
 
                         if closed_trade:
-                            self.trades.append(closed_trade)
-                            self._review_closed_trade(closed_trade)
+                            self._record_closed_trade(closed_trade)
                             self.open_position = None
                             self.equity_curve.append({"time": str(current_time), "balance": self.balance, "action": "CLOSED"})
                             result_emoji = "✅" if closed_trade["pnl"] >= 0 else "❌"
@@ -498,6 +516,7 @@ def main():
             print(f"❌ {exc}")
             sys.exit(1)
 
+    run_id = f"{args.symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     engine = BacktestEngine(
         data_paths=data_paths,
         symbol=args.symbol,
@@ -507,10 +526,50 @@ def main():
         initial_balance=args.balance,
         risk_per_trade_pct=args.risk_pct,
         step_interval=args.step,
+        result_db_path=args.data_db,
+        run_id=run_id,
     )
+    if data_from is None:
+        data_from = engine.df_base["time"].iloc[0].strftime("%Y-%m-%d %H:%M:%S")
+    if data_to is None:
+        data_to = engine.df_base["time"].iloc[-1].strftime("%Y-%m-%d %H:%M:%S")
 
-    trades = engine.run()
-    run_id = f"{args.symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    start_backtest_run(
+        args.data_db,
+        {
+            "run_id": run_id,
+            "symbol": args.symbol,
+            "timeframes": timeframes,
+            "base_timeframe": engine.base_tf,
+            "data_from": data_from,
+            "data_to": data_to,
+            "initial_balance": args.balance,
+            "final_balance": None,
+            "risk_per_trade_pct": engine.risk_per_trade_pct,
+            "step_interval": engine.step_interval,
+            "total_trades": 0,
+        },
+    )
+    print(f"💾 SQLite 백테스트 실행 row 생성: {args.data_db} (run_id={run_id})")
+    try:
+        trades = engine.run()
+    except KeyboardInterrupt:
+        mark_backtest_run_status(
+            args.data_db,
+            run_id=run_id,
+            status="interrupted",
+            error_message="KeyboardInterrupt",
+        )
+        print(f"\n⚠️ 백테스트 중단됨: run_id={run_id}")
+        sys.exit(130)
+    except Exception as exc:
+        mark_backtest_run_status(
+            args.data_db,
+            run_id=run_id,
+            status="failed",
+            error_message=str(exc),
+        )
+        raise
     report_archive: Optional[Dict[str, Any]] = None
 
     if args.report and trades:
@@ -544,9 +603,9 @@ def main():
                 "report_id": os.path.splitext(os.path.basename(report_path))[0],
                 "run_id": run_id,
                 "symbol": args.symbol,
-                "report_path": report_path,
+                "report_path": None,
                 "markdown_body": report_body,
-                "chart_path": chart_path,
+                "chart_path": None,
                 "report_created_at": datetime.now().isoformat(),
                 "summary_json": {
                     "chart_timeframe": engine.base_tf,
@@ -555,6 +614,9 @@ def main():
                     "risk_per_trade_pct": engine.risk_per_trade_pct,
                     "data_quality": engine.data_metadata,
                     "decision_summary": _summarize_decisions(engine.decisions),
+                    "artifact_path_ignored": True,
+                    "generated_report_filename": os.path.basename(report_path),
+                    "generated_chart_filename": os.path.basename(chart_path) if chart_path else None,
                 },
             }
         except OSError as exc:
@@ -563,30 +625,16 @@ def main():
         print("\n⚠️ 매매 기록이 없어 리포트를 생성하지 않습니다.")
 
     stats = _calculate_run_statistics(trades, args.balance, engine.balance)
-    if data_from is None:
-        data_from = engine.df_base["time"].iloc[0].strftime("%Y-%m-%d %H:%M:%S")
-    if data_to is None:
-        data_to = engine.df_base["time"].iloc[-1].strftime("%Y-%m-%d %H:%M:%S")
-    persist_backtest_result(
+    finish_backtest_run(
         args.data_db,
-        run={
-            "run_id": run_id,
-            "symbol": args.symbol,
-            "timeframes": timeframes,
-            "base_timeframe": engine.base_tf,
-            "data_from": data_from,
-            "data_to": data_to,
-            "initial_balance": args.balance,
-            "final_balance": engine.balance,
-            "risk_per_trade_pct": engine.risk_per_trade_pct,
-            "step_interval": engine.step_interval,
-            "total_trades": len(trades),
-            **stats,
-        },
-        trades=trades,
-        decisions=engine.decisions,
+        run_id=run_id,
+        final_balance=engine.balance,
+        total_trades=len(trades),
+        net_pnl=stats["net_pnl"],
+        profit_factor=stats["profit_factor"],
+        max_drawdown_pct=stats["max_drawdown_pct"],
     )
-    print(f"💾 SQLite 백테스트 결과 저장: {args.data_db} (run_id={run_id})")
+    print(f"💾 SQLite 백테스트 요약 갱신: {args.data_db} (run_id={run_id})")
     if report_archive:
         store_backtest_report(args.data_db, **report_archive)
 

@@ -11,7 +11,7 @@ def _snapshot(**latest_overrides):
         "ema50": 90.0,
         "atr14": 10.0,
         "adx14": 30.0,
-        "bb_upper20": 101.0,
+        "bb_upper20": 110.0,
         "bb_lower20": 90.0,
         "rsi14": 70.0,
     }
@@ -176,6 +176,66 @@ def test_ma_crossover_blocks_exhausted_band_entries():
     )
     assert not ok
     assert "overbought upper-band exhaustion" in reason
+
+
+def test_ma_crossover_blocks_late_chase_near_bollinger_band():
+    ok, reason = validate_strategy_setup(
+        "SELL",
+        99561.75,
+        100500.0,
+        {"selected_strategy": "Moving Average Crossover"},
+        _ma_mtf_snapshot(
+            "SELL",
+            close=99561.75,
+            ema20=100353.29,
+            ema50=100471.18,
+            atr14=745.35,
+            adx14=44.13,
+            bb_lower20=99259.01,
+            bb_upper20=102186.8,
+            rsi14=40.2,
+            low=99037.01,
+        ),
+    )
+    assert not ok
+    assert "late SELL chase" in reason
+
+    ok, reason = validate_strategy_setup(
+        "BUY",
+        109.8,
+        98.0,
+        {"selected_strategy": "Moving Average Crossover"},
+        _ma_mtf_snapshot(
+            "BUY",
+            close=109.8,
+            ema20=102.0,
+            ema50=101.0,
+            atr14=10.0,
+            adx14=30.0,
+            bb_upper20=110.0,
+            bb_lower20=90.0,
+            rsi14=56.0,
+        ),
+    )
+    assert not ok
+    assert "late BUY chase" in reason
+
+
+def test_ma_crossover_allows_aligned_setup_with_band_room():
+    ok, reason = validate_strategy_setup(
+        "SELL",
+        96.0,
+        107.0,
+        {"selected_strategy": "Moving Average Crossover"},
+        _ma_mtf_snapshot(
+            "SELL",
+            close=96.0,
+            atr14=10.0,
+            bb_lower20=85.0,
+            rsi14=46.0,
+        ),
+    )
+    assert ok, reason
 
 
 def test_bollinger_short_blocks_unresolved_uptrend_without_overbought_rsi():

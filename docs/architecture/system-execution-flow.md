@@ -21,7 +21,10 @@ sequenceDiagram
     %% Node 1
     Graph->>MT5: 1. Fetch OHLCV Data (Node 1)
     MT5-->>Graph: Raw Pandas DataFrame
-    Graph->>Graph: Calculate Indicators (RSI, MACD)
+    opt PERSIST_MARKET_CANDLES=1
+        Graph->>DB: Upsert runtime candles by symbol/timeframe/time
+    end
+    Graph->>Graph: Calculate Indicators (EMA, ADX, ATR, Bollinger, RSI)
     
     %% Node 2, 3, 4
     Graph->>Agent: 2. Tech Analyst (Prompt + Data + Retry)
@@ -54,7 +57,7 @@ sequenceDiagram
     activate MT5
     MT5-->>FastAPI: Execution Result (Ticket, Price)
     deactivate MT5
-    FastAPI->>FastAPI: 7. Persist tracked position (Local JSON)
+    FastAPI->>FastAPI: 7. Persist tracked position (Local JSON + SQLite mirror)
     
     FastAPI-->>User: 200 OK (Trade Executed)
     deactivate FastAPI
@@ -81,19 +84,23 @@ sequenceDiagram
     participant Report as Reporting Module
 
     Runner->>DB: Load Historical Candles by Symbol/TF/Date
+    Runner->>DB: Insert backtest_runs status=running
     loop For each candle interval
         Runner->>Mocker: Inject Current Window Data
         Runner->>Graph: app.invoke(mocked_state)
         Graph->>Graph: Agentic Analysis (Flash Model)
         Graph-->>Runner: Return Decision (BUY/SELL/WAIT)
+        Runner->>DB: Insert backtest_decisions immediately
         Runner->>Runner: Open one position or keep existing position
         Runner->>Runner: Check elapsed candles for SL/TP
+        Runner->>DB: Insert backtest_trades immediately when closed
         Runner->>Graph: Run Risk Reviewer only when position closes
         Runner->>Runner: Record PnL & Equity
     end
-    Runner->>DB: Persist run, trades, decisions
+    Runner->>DB: Update backtest_runs status=completed
     Runner->>Report: Generate Statistics & Chart
-    Report-->>Runner: Save Markdown + PNG
+    Report-->>Runner: Save Markdown + PNG files
+    Runner->>DB: Archive Markdown body only; report/chart paths are optional artifacts
 ```
 
 ## 플로우 핵심 요약
@@ -102,3 +109,4 @@ sequenceDiagram
 3. **Execution Interceptor:** LangGraph 출력을 `backend/core/guardrails`에서 최종 검증한 뒤 `mt5_client`로 전달하는 실행 접착제 로직이 포함되어 있습니다.
 4. **Lot Size Override:** AI가 아무리 큰 비중을 베팅하려 해도, 가드레일 모듈이 잔고의 1%만 잃도록 랏(Lot) 수를 강제 재계산(Override)하여 MT5로 전송합니다.
 5. **Post-Close Review:** Risk Reviewer는 주문 직후가 아니라 포지션 청산이 확인된 뒤에만 매매 일지를 생성합니다.
+6. **Replayable Data:** 차트와 복기는 파일 경로가 아니라 `candles`, `backtest_runs`, `backtest_trades`, `backtest_decisions`에서 재구성합니다.

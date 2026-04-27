@@ -22,7 +22,7 @@
 > 
 > *   **[paperclipai/paperclip](https://github.com/paperclipai/paperclip):** "Zero-human company(무인 회사)" 구축 프레임워크입니다. AI 에이전트들을 CEO, CTO, CBO(비즈니스 책임자), 엔지니어 등의 직책으로 조직도(Org Chart)에 배치합니다. 인간은 이사회(Board) 역할을 하여 목표와 예산만 승인하고, CEO 에이전트가 하위 에이전트들에게 티켓(Ticket) 기반으로 업무를 위임(Delegate)하는 멀티 에이전트 협업의 끝판왕 격 프로젝트입니다.
 > *   **[openclaw/openclaw](https://github.com/openclaw/openclaw):** 로컬 환경에서 돌아가는 에이전트 실행 런타임(OS)으로, 메신저와 연결되어 실제 행동(Execution)을 수행하는 데 특화되어 있습니다. Paperclip 같은 관리 프레임워크 안에서 하나의 '직원(Employee)'으로 고용되어 동작할 수 있습니다.
-> *   **우리 시스템에의 적용:** Paperclip의 '회사 조직도' 개념은 우리가 설계한 `docs/agent-workflow-design.md`의 멀티 에이전트 파이프라인(`Chief Trader`, `Tech Analyst` 등)과 철학적으로 완벽히 일치합니다. 우리는 FastAPI와 LangGraph를 결합하여, Paperclip처럼 각 에이전트가 명확한 직책(Role)과 권한을 갖고 협업하는 **"나만의 무인 트레이딩 펀드 회사"**를 구축하게 됩니다.
+> *   **우리 시스템에의 적용:** Paperclip의 '회사 조직도' 개념은 우리가 설계한 `docs/architecture/agent-workflow-design.md`의 멀티 에이전트 파이프라인(`Chief Trader`, `Tech Analyst` 등)과 철학적으로 완벽히 일치합니다. 우리는 FastAPI와 LangGraph를 결합하여, Paperclip처럼 각 에이전트가 명확한 직책(Role)과 권한을 갖고 협업하는 **"나만의 무인 트레이딩 펀드 회사"**를 구축하게 됩니다.
 
 ## 2. 알고리즘 트레이딩 코어 프레임워크
 

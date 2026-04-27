@@ -4,15 +4,17 @@ import pandas as pd
 from backend.workflows.state import AgentState
 from backend.workflows.graph import get_compiled_graph
 from backend.workflows.nodes import TechSummary, StrategyHypothesis, FinalOrder
+from backend.workflows.state import AgentState
 
 @patch('backend.workflows.nodes.is_market_open', return_value=True)
 @patch('backend.workflows.nodes.is_mt5_available', return_value=True)
 @patch('backend.workflows.nodes.get_current_price', return_value={"bid": 1.0520, "ask": 1.0525})
+@patch('backend.workflows.nodes.upsert_candles')
 @patch('backend.workflows.nodes.ChatGoogleGenerativeAI')
 @patch('backend.workflows.nodes.get_account_summary')
 @patch('backend.workflows.nodes.fetch_ohlcv')
 def test_end_to_end_trading_pipeline(
-    mock_fetch_ohlcv, mock_get_account, mock_llm,
+    mock_fetch_ohlcv, mock_get_account, mock_llm, mock_upsert_candles,
     mock_current_price, mock_mt5_avail, mock_market_open
 ):
     """
@@ -102,3 +104,40 @@ def test_end_to_end_trading_pipeline(
     assert "review_log" not in final_state
     
     assert final_state["final_order"]["action"] == "BUY"
+    mock_upsert_candles.assert_not_called()
+
+
+@patch.dict('os.environ', {'PERSIST_MARKET_CANDLES': '1', 'MARKET_DATA_DB_PATH': '/tmp/agentic-test-market.sqlite'})
+@patch('backend.workflows.nodes.is_market_open', return_value=True)
+@patch('backend.workflows.nodes.is_mt5_available', return_value=True)
+@patch('backend.workflows.nodes.get_current_price', return_value={"bid": 1.0520, "ask": 1.0525})
+@patch('backend.workflows.nodes.upsert_candles')
+@patch('backend.workflows.nodes.get_account_summary')
+@patch('backend.workflows.nodes.fetch_ohlcv')
+def test_fetch_data_node_can_persist_runtime_candles(
+    mock_fetch_ohlcv, mock_get_account, mock_upsert_candles,
+    mock_current_price, mock_mt5_avail, mock_market_open
+):
+    from backend.workflows.nodes import fetch_data_node
+
+    mock_get_account.return_value = {"balance": 10000.0}
+    mock_df = pd.DataFrame({
+        'time': ['2023-10-26 10:00:00'],
+        'open': [1.0500],
+        'high': [1.0550],
+        'low': [1.0450],
+        'close': [1.0520],
+        'tick_volume': [1000],
+        'spread': [1],
+        'real_volume': [0],
+    })
+    mock_fetch_ohlcv.return_value = mock_df
+
+    result = fetch_data_node(AgentState(symbol="EURUSD", timeframes=["M5", "M15"]))
+
+    assert result["error_flag"] is False
+    assert mock_upsert_candles.call_count == 2
+    first_call = mock_upsert_candles.call_args_list[0]
+    assert first_call.args[0] == "/tmp/agentic-test-market.sqlite"
+    assert first_call.args[1] == "EURUSD"
+    assert first_call.args[2] == "M5"

@@ -86,6 +86,9 @@ def test_migrate_legacy_backtest_and_trading_logs(tmp_path):
         assert conn.execute("SELECT COUNT(*) FROM backtest_runs").fetchone()[0] == 1
         assert conn.execute("SELECT COUNT(*) FROM backtest_trades").fetchone()[0] == 1
         assert conn.execute("SELECT COUNT(*) FROM backtest_reports").fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT report_path, chart_path FROM backtest_reports"
+        ).fetchone() == (None, None)
 
     with sqlite3.connect(trading_log_db) as conn:
         assert conn.execute("SELECT COUNT(*) FROM trade_reviews").fetchone()[0] == 1

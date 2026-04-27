@@ -17,12 +17,12 @@
 
 1. `AGENTS.md`
 2. `README.md`
-3. `docs/vision-and-philosophy.md`
+3. `docs/architecture/vision-and-philosophy.md`
 4. `docs/mvp-implementation-plan.md`
 5. `git status --short`
 6. `git log --oneline -5`
-7. 테스트 작업이면 `docs/testing-guide.md`
-8. 백테스트/운영 작업이면 `docs/backtesting-guide.md`, `docs/execution-guide.md`, `docs/live-operation-runbook.md`
+7. 테스트 작업이면 `docs/guides/testing-guide.md`
+8. 백테스트/운영 작업이면 `docs/backtesting/backtesting-guide.md`, `docs/guides/execution-guide.md`, `docs/guides/live-operation-runbook.md`
 9. 전략 작업이면 `docs/trading-strategies/`, `backend/config/strategies_config.json`, `backend/features/trading/strategy_validators.py`
 
 도구별 지침:
@@ -83,8 +83,13 @@ agentic-trader/
 │   ├── workflows/           # LangGraph graph, nodes, state alias
 │   ├── scripts/             # Backtest/history scripts
 │   └── main.py              # FastAPI entrypoint
-├── docs/                    # Architecture, runbooks, strategy documents
-│   └── vision-and-philosophy.md
+├── docs/                    # Architecture, runbooks, storage, strategy documents
+│   ├── architecture/        # Vision, system flow, agent workflow
+│   ├── backtesting/         # Backtest execution guide
+│   ├── guides/              # Operation, testing, MT5 guides
+│   ├── storage/             # SQLite schema and replayable data docs
+│   ├── strategy/            # Strategy authoring guides
+│   └── trading-strategies/  # Runtime strategy knowledge files
 ├── tests/                   # Unit/integration tests
 ├── backtests/               # Ignored generated data/results/reports
 └── trading_logs/            # Ignored generated trade reviews/state
@@ -92,7 +97,7 @@ agentic-trader/
 
 ## 6. Agent Roster
 
-LangGraph 파이프라인은 아래 역할을 순차적으로 호출합니다. 자세한 워크플로우는 `docs/agent-workflow-design.md`를 참고합니다.
+LangGraph 파이프라인은 아래 역할을 순차적으로 호출합니다. 자세한 워크플로우는 `docs/architecture/agent-workflow-design.md`를 참고합니다.
 
 1. **Tech Analyst**
    - 입력: Python이 계산한 OHLCV/indicator JSON.

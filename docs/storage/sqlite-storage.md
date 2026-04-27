@@ -84,7 +84,14 @@ sqlite3 trading_logs/trading_logs.sqlite "SELECT COUNT(*) FROM trade_reviews;"
 
 ```bash
 sqlite3 -header -column backtests/data/market_data.sqlite \
-  "SELECT run_id, symbol, timeframes, data_from, data_to, total_trades, net_pnl, profit_factor FROM backtest_runs ORDER BY created_at DESC LIMIT 10;"
+  "SELECT run_id, status, symbol, timeframes, data_from, data_to, total_trades, net_pnl, profit_factor FROM backtest_runs ORDER BY created_at DESC LIMIT 10;"
+```
+
+완료된 백테스트만 보기:
+
+```bash
+sqlite3 -header -column backtests/data/market_data.sqlite \
+  "SELECT run_id, symbol, timeframes, total_trades, net_pnl, profit_factor FROM backtest_runs WHERE status = 'completed' ORDER BY created_at DESC LIMIT 10;"
 ```
 
 전략별 백테스트 거래 성과 보기:
@@ -149,7 +156,7 @@ PY
 : 백테스트 각 판단 시점의 결과입니다. `HOLD`, `SKIP`, `REJECTED`, `OPENED` 같은 상태와 validator 차단 사유를 저장합니다.
 
 `backtest_reports`
-: Markdown 백테스트 리포트 본문을 저장합니다. PNG 차트는 DB에 넣지 않고 파일 경로만 저장합니다.
+: Markdown 백테스트 리포트 본문을 optional artifact/cache로 저장합니다. `report_path`, `chart_path`는 신규 저장 시 NULL이며, 차트는 `candles + backtest_runs + backtest_trades + backtest_decisions`로 재생성합니다.
 
 `lessons`
 : 향후 자동 학습/RAG에 사용할 후보 lesson 저장소입니다. symbol, timeframe, strategy, market_regime, confidence, status 같은 scope 정보를 함께 둡니다.

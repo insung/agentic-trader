@@ -44,7 +44,24 @@ make test
 - **LangGraph routing:** `tests/test_filter_routing.py`, `tests/test_end_to_end.py`
 - **LLM node behavior:** `tests/test_nodes_llm.py`, `tests/test_retry_logic.py`
 - **Position tracking / reviews:** `tests/test_position_tracker.py`
+- **Backtest persistence / observability:** `tests/test_backtest_store.py`, `tests/test_backtest_observability.py`, `tests/test_sqlite_backtest_loader.py`
 - **CLI/API payload contract:** `tests/test_trade_cli.py`
+
+## Backtest Observability Checks
+
+백테스트 속도나 수익률 분석용 로깅을 변경할 때는 다음 항목을 확인합니다.
+
+```bash
+make test
+```
+
+중점 확인:
+
+- `MAX_STEPS` 또는 `--max-steps`가 실제 LangGraph 호출 수를 제한해야 합니다.
+- `NO_REVIEW=1` 또는 `--no-review`가 청산 후 Risk Reviewer LLM 호출을 생략해야 합니다.
+- JSONL 로그에는 `backtest_start`, `node_complete`, `decision_recorded`, `step_complete`, `backtest_complete` 같은 핵심 이벤트가 남아야 합니다.
+- 로그에는 전체 prompt/OHLCV 원문을 반복 저장하지 말고, `run_id`, `step`, `candle_time`, `elapsed_ms`, `status`, `rejection_reason`, `trade_id`처럼 분석 가능한 작은 필드를 남깁니다.
+- 생성 로그는 `backtests/` 아래에 있어야 하며 Git에 추적하지 않습니다.
 
 ## CI
 

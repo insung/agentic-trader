@@ -58,6 +58,20 @@ DAYS ?= 30
 FROM ?=
 TO ?=
 STEP ?= 5
+MAX_STEPS ?=
+NO_REVIEW ?= 0
+LOG_FILE ?=
+
+BACKTEST_ARGS = --data-db "$(DATA_DB)" --symbol $(SYMBOL) --timeframes $(TIMEFRAMES) --risk-pct $(RISK_PCT) --step $(STEP) --report
+ifneq ($(MAX_STEPS),)
+BACKTEST_ARGS += --max-steps $(MAX_STEPS)
+endif
+ifeq ($(NO_REVIEW),1)
+BACKTEST_ARGS += --no-review
+endif
+ifneq ($(LOG_FILE),)
+BACKTEST_ARGS += --log-file "$(LOG_FILE)"
+endif
 
 # 과거 데이터 수집 (예: make backtest-fetch SYMBOL=EURUSD FROM=2023-01-01 TO=2023-01-31)
 backtest-fetch:
@@ -75,11 +89,11 @@ backtest-fetch:
 backtest-run: venv
 	@if [ -n "$(DATA)" ]; then \
 		echo "Running agentic backtest using legacy CSV data: $(DATA)..."; \
-		$(VENV_BIN)/python -m backend.scripts.run_backtest --data "$(DATA)" --data-db "$(DATA_DB)" --symbol $(SYMBOL) --timeframes $(TIMEFRAMES) --risk-pct $(RISK_PCT) --step $(STEP) --report; \
+		$(VENV_BIN)/python -m backend.scripts.run_backtest --data "$(DATA)" $(BACKTEST_ARGS); \
 	else \
 		if [ -z "$(FROM)" ] || [ -z "$(TO)" ]; then echo "FROM and TO are required for SQLite backtests. Example: make backtest-run SYMBOL=BTCUSD TIMEFRAMES=M15,M30 FROM=2025-01-01 TO=2025-02-28"; exit 1; fi; \
 		echo "Running agentic backtest from SQLite $(DATA_DB) ($(FROM) ~ $(TO))..."; \
-		$(VENV_BIN)/python -m backend.scripts.run_backtest --data-db "$(DATA_DB)" --symbol $(SYMBOL) --timeframes $(TIMEFRAMES) --from "$(FROM)" --to "$(TO)" --risk-pct $(RISK_PCT) --step $(STEP) --report; \
+		$(VENV_BIN)/python -m backend.scripts.run_backtest $(BACKTEST_ARGS) --from "$(FROM)" --to "$(TO)"; \
 	fi
 
 migrate-legacy-data: venv

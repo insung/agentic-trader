@@ -12,7 +12,7 @@
 
 ## Backtesting
 
-- [Backtesting Guide](./backtesting/backtesting-guide.md)
+- [Backtesting Guide](./backtesting/backtesting-guide.md) - 실행 절차, `RISK_PCT`, 빠른 진단 실행, JSONL 관측 로그
 
 ## Guides
 

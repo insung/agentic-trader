@@ -170,7 +170,7 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
     *   [x] `backtest_reports.report_path/chart_path`를 source-of-truth에서 제외하고 optional artifact로 낮췄습니다. 신규 저장은 path를 NULL로 두고, 차트는 candles/runs/trades/decisions에서 재생성합니다.
     *   [x] 실전/Paper 실행에서 `PERSIST_MARKET_CANDLES=1`을 설정하면 판단에 사용한 OHLCV를 market data SQLite에 upsert하여 백테스트와 같은 방식으로 재사용할 수 있게 했습니다.
     *   [x] 기존 CSV/JSON/Markdown 산출물을 SQLite로 옮기는 `make migrate-legacy-data` 경로를 추가합니다.
-    *   [x] `run_backtest.py`에 `--max-steps`, `--no-review` 옵션을 추가하여 짧은 디버그 실행과 긴 검증 실행을 분리합니다. `make backtest-run`에서는 `MAX_STEPS`, `NO_REVIEW`로 전달합니다.
+    *   [x] `run_backtest.py`에 `--start-step`, `--max-steps`, `--no-review`, `--log-level` 옵션을 추가하여 짧은 디버그 실행과 긴 검증 실행을 분리합니다. `make backtest-run`에서는 `START_STEP`, `MAX_STEPS`, `NO_REVIEW`, `LOG_LEVEL`로 전달합니다.
     *   [x] 백테스트 JSONL 구조화 로그를 `backtests/logs/backtest_<run_id>.jsonl`에 남깁니다. step/node별 `elapsed_ms`, decision status, rejection reason, trade open/close 이벤트를 기록하여 병목과 손실 원인을 추적합니다.
     *   동일한 `(symbol, timeframes, candle_time, raw_data, prompt_version)` 조합의 LLM 응답을 캐시하여 반복 백테스트 비용과 시간을 줄입니다.
     *   LLM 호출 없이 저장된 의사결정 캐시를 재생하는 deterministic replay 모드를 추가합니다.

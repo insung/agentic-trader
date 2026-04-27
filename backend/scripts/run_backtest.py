@@ -43,13 +43,28 @@ DEFAULT_RISK_PER_TRADE_PCT = 0.005
 LOOKBACK_CANDLES = 100  # 각 시점에서 에이전트에게 보여줄 과거 캔들 수
 STEP_INTERVAL = 5       # 몇 캔들마다 파이프라인을 호출할지 (비용 절감)
 
+LOG_LEVEL_ORDER = {
+    "TRACE": 10,
+    "DEBUG": 20,
+    "INFO": 30,
+    "WARNING": 40,
+    "ERROR": 50,
+}
+
 
 class BacktestEventLogger:
     """Write compact JSONL events that can be replayed by humans or AI agents."""
 
-    def __init__(self, path: Optional[str] = None, base_context: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        path: Optional[str] = None,
+        base_context: Optional[Dict[str, Any]] = None,
+        min_level: str = "TRACE",
+    ):
         self.path = path
         self.base_context = base_context or {}
+        self.min_level = min_level.upper()
+        self.min_level_value = LOG_LEVEL_ORDER.get(self.min_level, LOG_LEVEL_ORDER["TRACE"])
         self._fh = None
         if path:
             directory = os.path.dirname(path)
@@ -60,9 +75,12 @@ class BacktestEventLogger:
     def emit(self, event: str, level: str = "INFO", **fields: Any) -> None:
         if not self._fh:
             return
+        normalized_level = level.upper()
+        if LOG_LEVEL_ORDER.get(normalized_level, LOG_LEVEL_ORDER["INFO"]) < self.min_level_value:
+            return
         payload = {
             "ts": datetime.now().isoformat(),
-            "level": level,
+            "level": normalized_level,
             "event": event,
             **self.base_context,
             **fields,
@@ -141,11 +159,13 @@ class BacktestEngine:
         initial_balance: float = DEFAULT_INITIAL_BALANCE,
         risk_per_trade_pct: float = DEFAULT_RISK_PER_TRADE_PCT,
         step_interval: int = STEP_INTERVAL,
+        start_step: int = 0,
         max_steps: Optional[int] = None,
         review_trades: bool = True,
         result_db_path: Optional[str] = None,
         run_id: Optional[str] = None,
         event_log_path: Optional[str] = None,
+        event_log_level: str = "TRACE",
     ):
         self.data_paths = data_paths or []
         self.symbol = symbol
@@ -154,6 +174,7 @@ class BacktestEngine:
         self.balance = initial_balance
         self.risk_per_trade_pct = risk_per_trade_pct
         self.step_interval = step_interval
+        self.start_step = max(start_step, 0)
         self.max_steps = max_steps
         self.review_trades = review_trades
         self.result_db_path = result_db_path
@@ -165,6 +186,7 @@ class BacktestEngine:
                 "symbol": symbol,
                 "timeframes": self.timeframes,
             },
+            min_level=event_log_level,
         )
 
         # 전체 과거 데이터 로드
@@ -381,6 +403,8 @@ class BacktestEngine:
 
         start_idx = LOOKBACK_CANDLES
         step_positions = list(range(start_idx, total_candles, self.step_interval))
+        if self.start_step:
+            step_positions = step_positions[self.start_step :]
         if self.max_steps is not None:
             step_positions = step_positions[: max(self.max_steps, 0)]
         total_steps = len(step_positions)
@@ -389,6 +413,8 @@ class BacktestEngine:
         print(f"   총 {total_steps}개 시점에서 파이프라인 호출 예정")
         print(f"   초기 잔고: ${self.initial_balance:,.2f}")
         print(f"   Step Interval: {self.step_interval} 캔들")
+        if self.start_step:
+            print(f"   Start Step Offset: {self.start_step}")
         if self.max_steps is not None:
             print(f"   Max Steps: {self.max_steps}")
         if not self.review_trades:
@@ -401,6 +427,7 @@ class BacktestEngine:
             initial_balance=self.initial_balance,
             risk_per_trade_pct=self.risk_per_trade_pct,
             step_interval=self.step_interval,
+            start_step=self.start_step,
             max_steps=self.max_steps,
             review_trades=self.review_trades,
         )
@@ -726,9 +753,16 @@ def main():
     parser.add_argument("--balance", type=float, default=DEFAULT_INITIAL_BALANCE, help="초기 잔고 (기본: 10000)")
     parser.add_argument("--risk-pct", type=float, default=DEFAULT_RISK_PER_TRADE_PCT, help="거래당 계좌 리스크 비율 (기본: 0.005 = 0.5%)")
     parser.add_argument("--step", type=int, default=STEP_INTERVAL, help="파이프라인 호출 간격 (캔들 수, 기본: 5)")
+    parser.add_argument("--start-step", type=int, default=0, help="디버그용으로 건너뛸 파이프라인 판단 횟수")
     parser.add_argument("--max-steps", type=int, help="디버그용 최대 파이프라인 호출 횟수")
     parser.add_argument("--no-review", action="store_true", help="청산 후 Risk Reviewer LLM 복기를 생략")
     parser.add_argument("--log-file", type=str, help="구조화 JSONL 백테스트 로그 경로")
+    parser.add_argument(
+        "--log-level",
+        choices=["TRACE", "DEBUG", "INFO", "WARNING", "ERROR"],
+        default="TRACE",
+        help="JSONL 로그 최소 레벨 (기본: TRACE)",
+    )
     parser.add_argument("--report", action="store_true", help="백테스트 완료 후 리포트 자동 생성")
     args = parser.parse_args()
 
@@ -778,11 +812,13 @@ def main():
         initial_balance=args.balance,
         risk_per_trade_pct=args.risk_pct,
         step_interval=args.step,
+        start_step=args.start_step,
         max_steps=args.max_steps,
         review_trades=not args.no_review,
         result_db_path=args.data_db,
         run_id=run_id,
         event_log_path=log_file,
+        event_log_level=args.log_level,
     )
     if data_from is None:
         data_from = engine.df_base["time"].iloc[0].strftime("%Y-%m-%d %H:%M:%S")
@@ -871,6 +907,8 @@ def main():
                     "step_interval": engine.step_interval,
                     "risk_per_trade_pct": engine.risk_per_trade_pct,
                     "event_log_path": log_file,
+                    "event_log_level": args.log_level,
+                    "start_step": args.start_step,
                     "max_steps": args.max_steps,
                     "review_trades": engine.review_trades,
                     "data_quality": engine.data_metadata,
@@ -918,6 +956,8 @@ def main():
                 "step_interval": engine.step_interval,
                 "risk_per_trade_pct": engine.risk_per_trade_pct,
                 "event_log_path": log_file,
+                "event_log_level": args.log_level,
+                "start_step": args.start_step,
                 "max_steps": args.max_steps,
                 "review_trades": engine.review_trades,
                 "total_trades": len(trades),

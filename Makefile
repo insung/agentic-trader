@@ -58,11 +58,16 @@ DAYS ?= 30
 FROM ?=
 TO ?=
 STEP ?= 5
+START_STEP ?=
 MAX_STEPS ?=
 NO_REVIEW ?= 0
 LOG_FILE ?=
+LOG_LEVEL ?= TRACE
 
 BACKTEST_ARGS = --data-db "$(DATA_DB)" --symbol $(SYMBOL) --timeframes $(TIMEFRAMES) --risk-pct $(RISK_PCT) --step $(STEP) --report
+ifneq ($(START_STEP),)
+BACKTEST_ARGS += --start-step $(START_STEP)
+endif
 ifneq ($(MAX_STEPS),)
 BACKTEST_ARGS += --max-steps $(MAX_STEPS)
 endif
@@ -71,6 +76,9 @@ BACKTEST_ARGS += --no-review
 endif
 ifneq ($(LOG_FILE),)
 BACKTEST_ARGS += --log-file "$(LOG_FILE)"
+endif
+ifneq ($(LOG_LEVEL),)
+BACKTEST_ARGS += --log-level $(LOG_LEVEL)
 endif
 
 # 과거 데이터 수집 (예: make backtest-fetch SYMBOL=EURUSD FROM=2023-01-01 TO=2023-01-31)

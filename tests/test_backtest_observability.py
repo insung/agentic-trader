@@ -82,6 +82,57 @@ def test_backtest_max_steps_limits_graph_calls_and_writes_jsonl(monkeypatch, tmp
     assert events[-1]["event"] == "backtest_complete"
 
 
+def test_backtest_start_step_skips_initial_decision_positions(monkeypatch, tmp_path):
+    graph = _HoldGraph()
+    monkeypatch.setattr("backend.workflows.graph.get_compiled_graph", lambda: graph)
+    log_path = tmp_path / "backtest.jsonl"
+    df = _sample_backtest_df()
+    engine = BacktestEngine(
+        symbol="BTCUSD",
+        timeframes=["M15"],
+        dfs={"M15": df},
+        step_interval=1,
+        start_step=5,
+        max_steps=2,
+        run_id="BT-START-STEP",
+        event_log_path=str(log_path),
+    )
+
+    engine.run()
+    engine.event_logger.close()
+
+    events = _read_jsonl(log_path)
+    assert graph.calls == 2
+    assert events[0]["event"] == "backtest_start"
+    assert events[0]["start_step"] == 5
+    step_starts = [event for event in events if event["event"] == "step_start"]
+    assert [event["step_index"] for event in step_starts] == [105, 106]
+
+
+def test_backtest_log_level_filters_lower_priority_events(monkeypatch, tmp_path):
+    graph = _HoldGraph()
+    monkeypatch.setattr("backend.workflows.graph.get_compiled_graph", lambda: graph)
+    log_path = tmp_path / "backtest.jsonl"
+    df = _sample_backtest_df()
+    engine = BacktestEngine(
+        symbol="BTCUSD",
+        timeframes=["M15"],
+        dfs={"M15": df},
+        step_interval=1,
+        max_steps=1,
+        run_id="BT-LOG-LEVEL",
+        event_log_path=str(log_path),
+        event_log_level="INFO",
+    )
+
+    engine.run()
+    engine.event_logger.close()
+
+    events = _read_jsonl(log_path)
+    assert [event["event"] for event in events] == ["backtest_start", "backtest_complete"]
+    assert all(event["level"] == "INFO" for event in events)
+
+
 def test_no_review_skips_closed_trade_reviewer(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(run_backtest, "review_closed_trade", lambda *_args, **_kwargs: calls.append(True))

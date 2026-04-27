@@ -58,7 +58,9 @@ make test
 중점 확인:
 
 - `MAX_STEPS` 또는 `--max-steps`가 실제 LangGraph 호출 수를 제한해야 합니다.
+- `START_STEP` 또는 `--start-step`이 처음 N개 판단 지점을 건너뛰어야 합니다.
 - `NO_REVIEW=1` 또는 `--no-review`가 청산 후 Risk Reviewer LLM 호출을 생략해야 합니다.
+- `LOG_LEVEL` 또는 `--log-level`이 지정 레벨보다 낮은 JSONL 이벤트를 제외해야 합니다.
 - JSONL 로그에는 `backtest_start`, `node_complete`, `decision_recorded`, `step_complete`, `backtest_complete` 같은 핵심 이벤트가 남아야 합니다.
 - 로그에는 전체 prompt/OHLCV 원문을 반복 저장하지 말고, `run_id`, `step`, `candle_time`, `elapsed_ms`, `status`, `rejection_reason`, `trade_id`처럼 분석 가능한 작은 필드를 남깁니다.
 - 생성 로그는 `backtests/` 아래에 있어야 하며 Git에 추적하지 않습니다.

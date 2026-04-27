@@ -10,6 +10,9 @@
 `STEP=20`
 : 백테스트에서 20개 캔들마다 한 번 AI 판단을 실행한다는 뜻입니다. 빠른 검토에는 큰 값을 쓰고, 최종 검증에는 더 촘촘한 값을 사용합니다.
 
+`START_STEP=10`
+: 처음 10개 판단 지점을 건너뛰고 그 다음 판단 지점부터 실행합니다. `MAX_STEPS=10` 결과가 계속 HOLD라면 `START_STEP=10`, `START_STEP=20`처럼 구간을 밀어서 확인합니다.
+
 `MAX_STEPS=10`
 : 디버그용으로 파이프라인 호출 횟수를 제한합니다. 긴 기간 데이터를 모두 돌리기 전에 느린 구간, validator 차단 사유, LLM 응답 흐름을 빠르게 확인할 때 사용합니다.
 
@@ -18,6 +21,9 @@
 
 `LOG_FILE=...`
 : 백테스트 구조화 JSONL 로그 경로를 직접 지정합니다. 지정하지 않으면 `backtests/logs/backtest_<run_id>.jsonl`에 기록됩니다.
+
+`LOG_LEVEL=INFO`
+: JSONL 로그에 남길 최소 레벨을 지정합니다. 기본값은 `TRACE`라 모든 이벤트를 남깁니다. `INFO`는 run 시작/종료와 거래 open/close처럼 큰 이벤트만 남기고, `DEBUG`는 decision/review 이벤트까지, `TRACE`는 step/node timing까지 남깁니다.
 
 ## 먼저 테스트할 목록
 
@@ -88,6 +94,7 @@ make backtest-run \
   STEP=20 \
   MAX_STEPS=10 \
   NO_REVIEW=1 \
+  LOG_LEVEL=INFO \
   RISK_PCT=0.005
 ```
 
@@ -103,6 +110,22 @@ make backtest-run \
 - validator가 차단한 판단은 실행 중에도 `backtest_decisions`에 `REJECTED`로 저장됩니다.
 - `backtests/logs/backtest_<run_id>.jsonl`에 `backtest_start`, `step_start`, `node_complete`, `decision_recorded`, `trade_opened`, `trade_closed`, `step_complete`, `backtest_complete` 이벤트가 남습니다.
 - 로그의 `elapsed_ms`, `rejection_reason`, `strategy`, `market_regime`, `trade_id`를 보면 어떤 단계가 느린지, 어떤 조건이 수익/손실에 영향을 줬는지 추적할 수 있습니다.
+
+첫 10개 판단 지점이 모두 HOLD라면 다음 구간으로 이동합니다.
+
+```bash
+make backtest-run \
+  SYMBOL=BTCUSD \
+  TIMEFRAMES=M15,M30 \
+  FROM=2025-01-01 \
+  TO=2025-01-31 \
+  STEP=20 \
+  START_STEP=10 \
+  MAX_STEPS=10 \
+  NO_REVIEW=1 \
+  LOG_LEVEL=INFO \
+  RISK_PCT=0.005
+```
 
 빠른 진단 후 최종 검증은 `MAX_STEPS`와 `NO_REVIEW`를 빼고 실행합니다.
 

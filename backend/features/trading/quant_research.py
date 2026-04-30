@@ -41,6 +41,10 @@ class QuantResearchConfig:
     trend_rsi_uppers: List[float] | None = None
     reclaim_lookbacks: List[int] | None = None
     cooldown_bars: List[int] | None = None
+    breakout_lookbacks: List[int] | None = None
+    breakout_atr_buffers: List[float] | None = None
+    breakout_rsi_lowers: List[float] | None = None
+    breakout_rsi_uppers: List[float] | None = None
     min_trades_for_rank: int = 20
 
 
@@ -517,6 +521,158 @@ def run_trend_pullback_reclaim_research(
             "symbol": config.symbol,
             "timeframe": config.timeframe.upper(),
             "filter_timeframe": config.filter_timeframe.upper(),
+            "data_from": config.from_date,
+            "data_to": config.to_date,
+            "init_cash": config.init_cash,
+            "fees": config.fees,
+            "slippage": config.slippage,
+        },
+        results=ranked,
+    )
+
+
+def run_breakout_research(
+    candles: pd.DataFrame,
+    filter_candles: pd.DataFrame | None,
+    config: QuantResearchConfig,
+) -> QuantResearchResult:
+    """Run a Donchian-style breakout baseline with optional higher-timeframe confirmation."""
+    if candles.empty:
+        raise ValueError("No candle data available for breakout quant research")
+    required = {"time", "open", "high", "low", "close"}
+    missing = sorted(required - set(candles.columns))
+    if missing:
+        raise ValueError(f"Missing required candle columns: {', '.join(missing)}")
+
+    vbt = _load_vectorbt()
+    df = candles.sort_values("time").reset_index(drop=True).copy()
+    df["time"] = pd.to_datetime(df["time"])
+    close = df["close"].astype(float)
+    open_ = df["open"].astype(float)
+    high = df["high"].astype(float)
+    low = df["low"].astype(float)
+    rsi14 = _rsi(close, 14)
+    atr14 = _atr(df, 14)
+    merged_filter = _prepare_filter_frame(filter_candles, df["time"]) if filter_candles is not None else None
+
+    ema_fast_windows = config.ema_fast_windows or [20]
+    ema_slow_windows = config.ema_slow_windows or [50]
+    breakout_lookbacks = config.breakout_lookbacks or [20, 30, 50]
+    breakout_atr_buffers = config.breakout_atr_buffers or [0.0, 0.25, 0.5]
+    breakout_rsi_lowers = config.breakout_rsi_lowers or [50.0, 55.0]
+    breakout_rsi_uppers = config.breakout_rsi_uppers or [45.0, 50.0]
+    atr_stop_multipliers = config.atr_stop_multipliers or [1.5, 2.0]
+    rrs = config.rrs or [1.3, 1.5, 2.0]
+    cooldown_bars = config.cooldown_bars or [8, 12, 20]
+    freq = _timeframe_to_freq(config.timeframe)
+
+    results: List[Dict[str, Any]] = []
+    for ema_fast_window in ema_fast_windows:
+        ema_fast = close.ewm(span=ema_fast_window, adjust=False).mean()
+        for ema_slow_window in ema_slow_windows:
+            ema_slow = close.ewm(span=ema_slow_window, adjust=False).mean()
+            trend_up = ema_fast > ema_slow
+            trend_down = ema_fast < ema_slow
+
+            if merged_filter is not None:
+                filter_up = (
+                    (merged_filter["filter_close"] > merged_filter["filter_ema20"])
+                    & (merged_filter["filter_ema20"] > merged_filter["filter_ema50"])
+                )
+                filter_down = (
+                    (merged_filter["filter_close"] < merged_filter["filter_ema20"])
+                    & (merged_filter["filter_ema20"] < merged_filter["filter_ema50"])
+                )
+            else:
+                filter_up = pd.Series(True, index=df.index)
+                filter_down = pd.Series(True, index=df.index)
+
+            for breakout_lookback in breakout_lookbacks:
+                prev_high = high.shift(1).rolling(breakout_lookback).max()
+                prev_low = low.shift(1).rolling(breakout_lookback).min()
+                for breakout_atr_buffer in breakout_atr_buffers:
+                    breakout_long = close > (prev_high + (atr14 * breakout_atr_buffer))
+                    breakout_short = close < (prev_low - (atr14 * breakout_atr_buffer))
+                    long_reclaim = close > open_
+                    short_reclaim = close < open_
+                    long_exits = ((close < ema_slow) | (ema_fast < ema_slow)).fillna(False)
+                    short_exits = ((close > ema_slow) | (ema_fast > ema_slow)).fillna(False)
+
+                    for breakout_rsi_lower in breakout_rsi_lowers:
+                        for breakout_rsi_upper in breakout_rsi_uppers:
+                            base_long_entries = (
+                                trend_up
+                                & filter_up
+                                & breakout_long
+                                & long_reclaim
+                                & (rsi14 >= breakout_rsi_lower)
+                            ).fillna(False)
+                            base_short_entries = (
+                                trend_down
+                                & filter_down
+                                & breakout_short
+                                & short_reclaim
+                                & (rsi14 <= breakout_rsi_upper)
+                            ).fillna(False)
+
+                            for cooldown in cooldown_bars:
+                                long_entries = _apply_cooldown(base_long_entries, cooldown)
+                                short_entries = _apply_cooldown(base_short_entries, cooldown)
+                                for atr_stop_multiplier in atr_stop_multipliers:
+                                    sl_stop = ((atr14 * atr_stop_multiplier) / close).clip(lower=0.0001)
+                                    for rr in rrs:
+                                        tp_stop = sl_stop * rr
+                                        portfolio = vbt.Portfolio.from_signals(
+                                            close,
+                                            entries=long_entries.astype(bool),
+                                            exits=long_exits.astype(bool),
+                                            short_entries=short_entries.astype(bool),
+                                            short_exits=short_exits.astype(bool),
+                                            init_cash=config.init_cash,
+                                            fees=config.fees,
+                                            slippage=config.slippage,
+                                            sl_stop=sl_stop,
+                                            tp_stop=tp_stop,
+                                            freq=freq,
+                                        )
+                                        stats = portfolio.stats()
+                                        results.append(
+                                            {
+                                                "parameter_json": {
+                                                    "ema_fast": int(ema_fast_window),
+                                                    "ema_slow": int(ema_slow_window),
+                                                    "filter_timeframe": config.filter_timeframe.upper() if config.filter_timeframe else None,
+                                                    "breakout_lookback": int(breakout_lookback),
+                                                    "breakout_atr_buffer": float(breakout_atr_buffer),
+                                                    "cooldown_bars": int(cooldown),
+                                                    "atr_stop_multiplier": float(atr_stop_multiplier),
+                                                    "breakout_rsi_lower": float(breakout_rsi_lower),
+                                                    "breakout_rsi_upper": float(breakout_rsi_upper),
+                                                    "rr": float(rr),
+                                                },
+                                                "total_return_pct": _float_metric(stats, "Total Return [%]"),
+                                                "total_trades": _int_metric(stats, "Total Trades"),
+                                                "win_rate": _float_metric(stats, "Win Rate [%]"),
+                                                "profit_factor": _float_metric(stats, "Profit Factor"),
+                                                "max_drawdown_pct": _float_metric(stats, "Max Drawdown [%]"),
+                                                "sharpe": _float_metric(stats, "Sharpe Ratio"),
+                                                "expectancy": _float_metric(stats, "Expectancy"),
+                                                "min_trades_for_rank": config.min_trades_for_rank,
+                                            }
+                                        )
+
+    ranked = sorted(results, key=_rank_key, reverse=True)
+    for index, item in enumerate(ranked, start=1):
+        item.pop("min_trades_for_rank", None)
+        item["rank"] = index
+
+    return QuantResearchResult(
+        run={
+            "run_id": _now_run_id(config.symbol),
+            "strategy": config.strategy,
+            "symbol": config.symbol,
+            "timeframe": config.timeframe.upper(),
+            "filter_timeframe": config.filter_timeframe.upper() if config.filter_timeframe else None,
             "data_from": config.from_date,
             "data_to": config.to_date,
             "init_cash": config.init_cash,

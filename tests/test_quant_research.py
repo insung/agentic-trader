@@ -8,6 +8,7 @@ from backend.features.trading import backtest_store
 from backend.features.trading.quant_research import (
     QuantResearchConfig,
     QuantResearchResult,
+    run_breakout_research,
     run_bollinger_research,
     run_bollinger_mtf_research,
     run_trend_pullback_reclaim_research,
@@ -192,6 +193,43 @@ def test_run_trend_pullback_reclaim_research_uses_reclaim_and_cooldown(tmp_path,
     assert result.results[0]["parameter_json"]["reclaim_lookback"] == 5
     assert result.results[0]["parameter_json"]["cooldown_bars"] == 8
     assert result.results[0]["parameter_json"]["atr_stop_multiplier"] == 2.0
+
+
+def test_run_breakout_research_supports_optional_filter_timeframe(tmp_path, monkeypatch):
+    monkeypatch.setitem(sys.modules, "vectorbt", SimpleNamespace(Portfolio=_FakePortfolio))
+    _FakePortfolio.call_count = 0
+    _FakePortfolio.last_kwargs = {}
+
+    result = run_breakout_research(
+        _sample_candles(),
+        _sample_candles(periods=40),
+        QuantResearchConfig(
+            symbol="BTCUSD",
+            timeframe="M15",
+            filter_timeframe="H1",
+            from_date="2025-01-01",
+            to_date="2025-01-01",
+            strategy="breakout",
+            ema_fast_windows=[20],
+            ema_slow_windows=[50],
+            breakout_lookbacks=[20],
+            breakout_atr_buffers=[0.0],
+            breakout_rsi_lowers=[50],
+            breakout_rsi_uppers=[50],
+            cooldown_bars=[8],
+            atr_stop_multipliers=[2.0],
+            rrs=[2.0],
+        ),
+    )
+
+    assert _FakePortfolio.call_count == 1
+    assert result.run["strategy"] == "breakout"
+    assert result.run["filter_timeframe"] == "H1"
+    assert _FakePortfolio.last_kwargs["entries"].dtype == bool
+    assert _FakePortfolio.last_kwargs["short_entries"].dtype == bool
+    assert result.results[0]["parameter_json"]["breakout_lookback"] == 20
+    assert result.results[0]["parameter_json"]["breakout_atr_buffer"] == 0.0
+    assert result.results[0]["parameter_json"]["cooldown_bars"] == 8
 
 
 def test_persist_quant_research_result_records_run_and_ranked_results(tmp_path):

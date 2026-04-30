@@ -16,6 +16,7 @@ from backend.features.trading.backtest_store import (
 )
 from backend.features.trading.quant_research import (
     QuantResearchConfig,
+    run_breakout_research,
     run_bollinger_mtf_research,
     run_bollinger_research,
     run_trend_pullback_reclaim_research,
@@ -42,7 +43,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--strategy",
         default="bollinger",
-        choices=["bollinger", "bollinger_mtf", "trend_pullback", "trend_pullback_reclaim"],
+        choices=["bollinger", "bollinger_mtf", "trend_pullback", "trend_pullback_reclaim", "breakout"],
     )
     parser.add_argument("--init-cash", type=float, default=10000.0)
     parser.add_argument("--fees", type=float, default=0.0)
@@ -63,6 +64,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--trend-rsi-uppers", default="55")
     parser.add_argument("--reclaim-lookbacks", default="3,5,8")
     parser.add_argument("--cooldown-bars", default="8,12,20")
+    parser.add_argument("--breakout-lookbacks", default="20,30,50")
+    parser.add_argument("--breakout-atr-buffers", default="0.0,0.25,0.5")
+    parser.add_argument("--breakout-rsi-lowers", default="50,55")
+    parser.add_argument("--breakout-rsi-uppers", default="45,50")
     parser.add_argument("--top", type=int, default=10)
     return parser.parse_args()
 
@@ -102,6 +107,10 @@ def main() -> None:
         trend_rsi_uppers=_parse_floats(args.trend_rsi_uppers),
         reclaim_lookbacks=_parse_ints(args.reclaim_lookbacks),
         cooldown_bars=_parse_ints(args.cooldown_bars),
+        breakout_lookbacks=_parse_ints(args.breakout_lookbacks),
+        breakout_atr_buffers=_parse_floats(args.breakout_atr_buffers),
+        breakout_rsi_lowers=_parse_floats(args.breakout_rsi_lowers),
+        breakout_rsi_uppers=_parse_floats(args.breakout_rsi_uppers),
     )
     if args.strategy in {"bollinger_mtf", "trend_pullback", "trend_pullback_reclaim"}:
         if not args.filter_timeframe:
@@ -124,12 +133,31 @@ def main() -> None:
             result = run_trend_pullback_research(candles, filter_candles, config)
         else:
             result = run_trend_pullback_reclaim_research(candles, filter_candles, config)
+    elif args.strategy == "breakout" and args.filter_timeframe:
+        filter_candles = load_candles(
+            args.data_db,
+            args.symbol,
+            args.filter_timeframe,
+            args.from_date,
+            args.to_date,
+        )
+        if filter_candles.empty:
+            raise SystemExit(
+                f"No filter candles found for {args.symbol} {args.filter_timeframe} "
+                f"from {args.from_date} to {args.to_date}. Run `make backtest-fetch` first."
+            )
+        result = run_breakout_research(candles, filter_candles, config)
     else:
-        result = run_bollinger_research(candles, config)
+        if args.strategy == "breakout":
+            result = run_breakout_research(candles, None, config)
+        else:
+            result = run_bollinger_research(candles, config)
     run_id = persist_quant_research_result(args.data_db, result)
 
     print(f"✅ Quant research complete: {run_id}")
-    if args.strategy in {"bollinger_mtf", "trend_pullback", "trend_pullback_reclaim"}:
+    if args.strategy in {"bollinger_mtf", "trend_pullback", "trend_pullback_reclaim"} or (
+        args.strategy == "breakout" and args.filter_timeframe
+    ):
         print(f"   Symbol/timeframes: {args.symbol} {args.timeframe}+{args.filter_timeframe}")
     else:
         print(f"   Symbol/timeframe: {args.symbol} {args.timeframe}")

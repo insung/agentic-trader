@@ -97,8 +97,12 @@ Guardrail executes or blocks
 - [x] Trend Pullback 실패 분석을 반영한 `trend_pullback_reclaim` baseline을 구현합니다.
   - 거래 과다를 줄이기 위해 EMA reclaim, higher timeframe close alignment, RSI 회복, cooldown을 추가합니다.
   - EMA20 단일 이탈 청산 대신 EMA50 또는 추세 반전 청산으로 완화합니다.
+- [x] LLM 없이 Breakout baseline을 구현합니다.
+  - `make quant-run QUANT_STRATEGY=breakout TIMEFRAME=M15 FILTER_TIMEFRAME=M30 FROM=... TO=...`로 실행합니다.
+  - 최근 고가/저가 돌파, ATR 버퍼, RSI momentum, higher timeframe trend filter를 사용합니다.
 - [x] 저장된 quant run을 비교하는 `make quant-summary`를 추가합니다.
   - 대화에 붙여넣은 결과가 아니라 SQLite `quant_runs`, `quant_results` 기준으로 전략별 rank 1 결과를 비교합니다.
+  - 월별 비교가 필요하면 `SUMMARY_MONTHLY=1`로 `data_from` 월별 best run을 확인합니다.
 - [ ] LLM 없이 MA Crossover baseline을 구현합니다.
 - [ ] Buy & Hold benchmark를 추가합니다.
 - [ ] Random/no-trade benchmark를 추가합니다.
@@ -121,7 +125,7 @@ Guardrail executes or blocks
 ## 현재 보류할 것
 
 - [ ] 새 전략을 즉시 추가하는 것은 보류합니다.
-  - 이유: 전략 수를 늘리기 전에 현재 Bollinger/MA가 왜 후보를 만들지 못하는지 데이터로 분리해야 합니다.
+  - 이유: 전략 수를 늘리기 전에 현재 Bollinger/MA가 왜 후보를 만들지 못하는지 데이터로 분리해야 합니다. 다만 breakout baseline은 이미 추가합니다.
 - [ ] LLM 프롬프트만 더 공격적으로 바꾸는 것은 보류합니다.
   - 이유: 통과 가능한 후보 자체가 적으면 프롬프트 변경은 검증 불가능한 주문을 늘릴 가능성이 큽니다.
 - [ ] live/paper 장기 운영은 보류합니다.

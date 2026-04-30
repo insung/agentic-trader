@@ -74,6 +74,16 @@ make quant-summary \
   TO=2025-03-31
 ```
 
+월별 비교가 필요하면 `SUMMARY_MONTHLY=1`을 켭니다.
+
+```bash
+make quant-summary \
+  SYMBOL=BTCUSD \
+  FROM=2025-01-01 \
+  TO=2025-03-31 \
+  SUMMARY_MONTHLY=1
+```
+
 특정 전략만 보고 싶다면 `SUMMARY_STRATEGY`를 사용합니다.
 
 ```bash
@@ -82,6 +92,13 @@ make quant-summary \
   FROM=2025-01-01 \
   TO=2025-03-31 \
   SUMMARY_STRATEGY=trend_pullback_reclaim
+```
+
+특정 `run_id` 하나만 보고 싶다면 `SUMMARY_RUN_ID`를 사용합니다.
+
+```bash
+make quant-summary \
+  SUMMARY_RUN_ID=QR_BTCUSD_20260430_143755
 ```
 
 멀티 타임프레임 Bollinger + RSI 실험은 `bollinger_mtf`를 사용합니다. 기본 구조는 `TIMEFRAME`에서 진입 타이밍을 보고, `FILTER_TIMEFRAME`에서 강한 추세 역행 진입을 막는 단일 전략입니다.
@@ -153,6 +170,30 @@ make quant-run \
 - Cooldown: 신호 발생 후 `COOLDOWN_BARS` 동안 같은 방향 재진입을 막음
 - Exit 완화: EMA20이 아니라 EMA50 이탈 또는 EMA fast/slow 추세 반전 때 조건부 청산
 - 기본 실험 변수: `RECLAIM_LOOKBACKS=3,5,8`, `COOLDOWN_BARS=8,12,20`, `ATR_STOP_MULTIPLIERS=2.0,3.0`, `RRS=2.0,3.0`
+
+돌파 추종 baseline은 `breakout`을 사용합니다. 최근 고가/저가를 넘는 추세 지속을 노리며, 필요하면 higher timeframe 필터를 함께 씁니다.
+
+```bash
+make quant-run \
+  SYMBOL=BTCUSD \
+  TIMEFRAME=M15 \
+  FILTER_TIMEFRAME=M30 \
+  FROM=2025-01-01 \
+  TO=2025-03-31 \
+  QUANT_STRATEGY=breakout \
+  FEES=0.0002 \
+  SLIPPAGE=0.0002 \
+  BREAKOUT_LOOKBACKS=20,30,50 \
+  BREAKOUT_ATR_BUFFERS=0.0,0.25,0.5
+```
+
+`breakout`의 현재 규칙:
+
+- M15 Long 후보: 최근 `BREAKOUT_LOOKBACKS` 구간 고가를 상향 돌파하고, RSI가 `BREAKOUT_RSI_LOWERS` 이상이며, 양봉 재개
+- M15 Short 후보: 최근 `BREAKOUT_LOOKBACKS` 구간 저가를 하향 이탈하고, RSI가 `BREAKOUT_RSI_UPPERS` 이하이며, 음봉 재개
+- MTF 필터(선택): higher timeframe에서 `close > EMA20 > EMA50`이면 Long만 허용, `close < EMA20 < EMA50`이면 Short만 허용
+- 진입 버퍼: `BREAKOUT_ATR_BUFFERS`를 ATR 비율로 더해 노이즈성 돌파를 줄임
+- 청산/리스크: `EMA50` 이탈 또는 추세 반전, `ATR_STOP_MULTIPLIERS`, `RRS` 기반 vectorbt SL/TP 실험
 
 ## 먼저 테스트할 목록
 

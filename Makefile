@@ -130,9 +130,19 @@ TREND_RSI_LOWERS ?= 45
 TREND_RSI_UPPERS ?= 55
 RECLAIM_LOOKBACKS ?= 3,5,8
 COOLDOWN_BARS ?= 8,12,20
+BREAKOUT_LOOKBACKS ?= 20,30,50
+BREAKOUT_ATR_BUFFERS ?= 0.0,0.25,0.5
+BREAKOUT_RSI_LOWERS ?= 50,55
+BREAKOUT_RSI_UPPERS ?= 45,50
 TOP ?= 10
 SUMMARY_LIMIT ?= 50
 SUMMARY_STRATEGY ?=
+SUMMARY_RUN_ID ?=
+SUMMARY_MONTHLY ?= 0
+SUMMARY_MONTHLY_FLAG :=
+ifeq ($(SUMMARY_MONTHLY),1)
+SUMMARY_MONTHLY_FLAG := --monthly
+endif
 
 quant-run: venv
 	@if [ -z "$(FROM)" ] || [ -z "$(TO)" ]; then echo "FROM and TO are required for quant research. Example: make quant-run SYMBOL=BTCUSD TIMEFRAME=M15 FROM=2025-01-01 TO=2025-01-31"; exit 1; fi
@@ -163,15 +173,21 @@ quant-run: venv
 		--trend-rsi-uppers "$(TREND_RSI_UPPERS)" \
 		--reclaim-lookbacks "$(RECLAIM_LOOKBACKS)" \
 		--cooldown-bars "$(COOLDOWN_BARS)" \
+		--breakout-lookbacks "$(BREAKOUT_LOOKBACKS)" \
+		--breakout-atr-buffers "$(BREAKOUT_ATR_BUFFERS)" \
+		--breakout-rsi-lowers "$(BREAKOUT_RSI_LOWERS)" \
+		--breakout-rsi-uppers "$(BREAKOUT_RSI_UPPERS)" \
 		--top $(TOP)
 
 quant-summary: venv
 	$(VENV_BIN)/python -m backend.scripts.summarize_quant_research \
 		--data-db "$(DATA_DB)" \
+		$(if $(SUMMARY_RUN_ID),--run-id $(SUMMARY_RUN_ID),) \
 		$(if $(SYMBOL),--symbol $(SYMBOL),) \
 		$(if $(FROM),--from "$(FROM)",) \
 		$(if $(TO),--to "$(TO)",) \
 		$(if $(SUMMARY_STRATEGY),--strategy $(SUMMARY_STRATEGY),) \
+		$(SUMMARY_MONTHLY_FLAG) \
 		--limit $(SUMMARY_LIMIT)
 
 migrate-legacy-data: venv

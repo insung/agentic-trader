@@ -207,6 +207,8 @@ make quant-run SYMBOL=BTCUSD TIMEFRAME=M15 FROM=2025-01-01 TO=2025-02-28
 make quant-summary SYMBOL=BTCUSD FROM=2025-01-01 TO=2025-02-28
 ```
 
+월별 요약은 `SUMMARY_MONTHLY=1`로 실행합니다.
+
 기존 CSV/JSON/Markdown 산출물 마이그레이션:
 
 ```bash

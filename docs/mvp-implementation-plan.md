@@ -175,7 +175,7 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
     *   [x] 기존 CSV/JSON/Markdown 산출물을 SQLite로 옮기는 `make migrate-legacy-data` 경로를 추가합니다.
     *   [x] `run_backtest.py`에 `--start-step`, `--max-steps`, `--no-review`, `--log-level` 옵션을 추가하여 짧은 디버그 실행과 긴 검증 실행을 분리합니다. `make backtest-run`에서는 `START_STEP`, `MAX_STEPS`, `NO_REVIEW`, `LOG_LEVEL`로 전달합니다.
     *   [x] 백테스트 JSONL 구조화 로그를 `backtests/logs/backtest_<run_id>.jsonl`에 남깁니다. step/node별 `elapsed_ms`, decision status, rejection reason, trade open/close 이벤트를 기록하여 병목과 손실 원인을 추적합니다.
-    *   [x] vectorbt 기반 quant research 경로를 추가했습니다. `make install-quant`로 옵션 의존성을 설치하고, `make quant-run`으로 SQLite `candles`에서 Bollinger baseline, Bollinger MTF baseline, Trend Pullback baseline, Trend Pullback Reclaim baseline 파라미터 스윕을 실행해 `quant_runs`, `quant_results`에 저장합니다.
+    *   [x] vectorbt 기반 quant research 경로를 추가했습니다. `make install-quant`로 옵션 의존성을 설치하고, `make quant-run`으로 SQLite `candles`에서 Bollinger baseline, Bollinger MTF baseline, Trend Pullback baseline, Trend Pullback Reclaim baseline, Breakout baseline 파라미터 스윕을 실행해 `quant_runs`, `quant_results`에 저장합니다.
     *   반복된 `0 trades` run을 분석하는 No-Trade Audit을 추가합니다. 상세 체크리스트는 `docs/strategy/strategy-research-pivot.md`를 기준으로 합니다.
     *   동일한 `(symbol, timeframes, candle_time, raw_data, prompt_version)` 조합의 LLM 응답을 캐시하여 반복 백테스트 비용과 시간을 줄입니다.
     *   LLM 호출 없이 저장된 의사결정 캐시를 재생하는 deterministic replay 모드를 추가합니다.

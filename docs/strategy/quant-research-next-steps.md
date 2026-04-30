@@ -9,16 +9,15 @@
 - `trend_pullback`은 폐기 후보입니다.
 - `trend_pullback_reclaim`은 구조 개선은 있었지만 승격 기준을 넘지 못했습니다.
 - `breakout`은 3개월에서는 그럴듯했지만 6개월에서 PF가 1 미만으로 내려가 실패했습니다.
+- `ma_crossover`와 `macd`는 추가된 deterministic baseline입니다.
 
 즉, 현재까지의 deterministic baseline은 **실전 승격 후보를 아직 만들지 못했습니다.**
 
 ## 다음 단계
 
-### 1. MA Crossover baseline 추가
+### 1. MA Crossover / MACD baseline 비교
 
-현재 quant baseline 목록에는 LLM 없이 동작하는 MA Crossover가 없습니다.
-
-이 전략을 추가해서 다음을 비교합니다.
+MA Crossover와 MACD baseline은 현재 비교 대상으로 추가했습니다.
 
 - Buy & Hold
 - Bollinger
@@ -26,6 +25,7 @@
 - Trend Pullback Reclaim
 - Breakout
 - MA Crossover
+- MACD
 
 ### 2. Buy & Hold benchmark 추가
 
@@ -48,7 +48,7 @@
 1. 1~6개월 quant run을 돌립니다.
 2. `make quant-summary SUMMARY_MONTHLY=1`로 월별 결과를 봅니다.
 3. 좋은 달만 고른 과최적화를 피합니다.
-4. MA Crossover baseline을 추가합니다.
+4. MA Crossover와 MACD baseline을 비교합니다.
 5. 다시 quant summary를 비교합니다.
 
 ## 현재 보류할 것
@@ -67,4 +67,3 @@
 - 거래 수가 충분히 많음
 - 월별로 일관성이 있음
 - 문서, registry, validator, 테스트가 모두 존재함
-

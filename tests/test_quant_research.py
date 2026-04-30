@@ -11,6 +11,7 @@ from backend.features.trading.quant_research import (
     run_breakout_research,
     run_bollinger_research,
     run_bollinger_mtf_research,
+    run_macd_research,
     run_trend_pullback_reclaim_research,
     run_trend_pullback_research,
 )
@@ -230,6 +231,39 @@ def test_run_breakout_research_supports_optional_filter_timeframe(tmp_path, monk
     assert result.results[0]["parameter_json"]["breakout_lookback"] == 20
     assert result.results[0]["parameter_json"]["breakout_atr_buffer"] == 0.0
     assert result.results[0]["parameter_json"]["cooldown_bars"] == 8
+
+
+def test_run_macd_research_uses_macd_parameters(tmp_path, monkeypatch):
+    monkeypatch.setitem(sys.modules, "vectorbt", SimpleNamespace(Portfolio=_FakePortfolio))
+    _FakePortfolio.call_count = 0
+    _FakePortfolio.last_kwargs = {}
+
+    result = run_macd_research(
+        _sample_candles(),
+        QuantResearchConfig(
+            symbol="BTCUSD",
+            timeframe="M15",
+            from_date="2025-01-01",
+            to_date="2025-01-01",
+            strategy="macd",
+            macd_fast_windows=[12],
+            macd_slow_windows=[26],
+            macd_signal_windows=[9],
+            cooldown_bars=[8],
+            atr_stop_multipliers=[1.5],
+            rrs=[1.3],
+        ),
+    )
+
+    assert _FakePortfolio.call_count == 1
+    assert result.run["strategy"] == "macd"
+    assert result.run["timeframe"] == "M15"
+    assert _FakePortfolio.last_kwargs["freq"] == "15min"
+    assert _FakePortfolio.last_kwargs["entries"].dtype == bool
+    assert _FakePortfolio.last_kwargs["short_entries"].dtype == bool
+    assert result.results[0]["parameter_json"]["macd_fast"] == 12
+    assert result.results[0]["parameter_json"]["macd_slow"] == 26
+    assert result.results[0]["parameter_json"]["macd_signal"] == 9
 
 
 def test_persist_quant_research_result_records_run_and_ranked_results(tmp_path):

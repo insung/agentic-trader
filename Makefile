@@ -134,6 +134,9 @@ BREAKOUT_LOOKBACKS ?= 20,30,50
 BREAKOUT_ATR_BUFFERS ?= 0.0,0.25,0.5
 BREAKOUT_RSI_LOWERS ?= 50,55
 BREAKOUT_RSI_UPPERS ?= 45,50
+MACD_FAST_WINDOWS ?= 12
+MACD_SLOW_WINDOWS ?= 26
+MACD_SIGNAL_WINDOWS ?= 9
 TOP ?= 10
 SUMMARY_LIMIT ?= 50
 SUMMARY_STRATEGY ?=
@@ -177,6 +180,9 @@ quant-run: venv
 		--breakout-atr-buffers "$(BREAKOUT_ATR_BUFFERS)" \
 		--breakout-rsi-lowers "$(BREAKOUT_RSI_LOWERS)" \
 		--breakout-rsi-uppers "$(BREAKOUT_RSI_UPPERS)" \
+		--macd-fast-windows "$(MACD_FAST_WINDOWS)" \
+		--macd-slow-windows "$(MACD_SLOW_WINDOWS)" \
+		--macd-signal-windows "$(MACD_SIGNAL_WINDOWS)" \
 		--top $(TOP)
 
 quant-summary: venv

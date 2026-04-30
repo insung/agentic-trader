@@ -45,6 +45,9 @@ class QuantResearchConfig:
     breakout_atr_buffers: List[float] | None = None
     breakout_rsi_lowers: List[float] | None = None
     breakout_rsi_uppers: List[float] | None = None
+    macd_fast_windows: List[int] | None = None
+    macd_slow_windows: List[int] | None = None
+    macd_signal_windows: List[int] | None = None
     min_trades_for_rank: int = 20
 
 
@@ -818,6 +821,119 @@ def run_bollinger_mtf_research(
             "symbol": config.symbol,
             "timeframe": config.timeframe.upper(),
             "filter_timeframe": config.filter_timeframe.upper(),
+            "data_from": config.from_date,
+            "data_to": config.to_date,
+            "init_cash": config.init_cash,
+            "fees": config.fees,
+            "slippage": config.slippage,
+        },
+        results=ranked,
+    )
+
+
+def run_macd_research(
+    candles: pd.DataFrame,
+    config: QuantResearchConfig,
+) -> QuantResearchResult:
+    """Run a MACD momentum baseline."""
+    if candles.empty:
+        raise ValueError("No candle data available for macd quant research")
+    required = {"time", "open", "high", "low", "close"}
+    missing = sorted(required - set(candles.columns))
+    if missing:
+        raise ValueError(f"Missing required candle columns: {', '.join(missing)}")
+
+    vbt = _load_vectorbt()
+    df = candles.sort_values("time").reset_index(drop=True).copy()
+    close = df["close"].astype(float)
+    atr14 = _atr(df, 14)
+    freq = _timeframe_to_freq(config.timeframe)
+
+    macd_fast_windows = config.macd_fast_windows or [12]
+    macd_slow_windows = config.macd_slow_windows or [26]
+    macd_signal_windows = config.macd_signal_windows or [9]
+    atr_stop_multipliers = config.atr_stop_multipliers or [1.5, 2.0]
+    rrs = config.rrs or [1.3, 1.5, 2.0]
+    cooldown_bars = config.cooldown_bars or [0]
+
+    results: List[Dict[str, Any]] = []
+
+    for fast_window in macd_fast_windows:
+        for slow_window in macd_slow_windows:
+            if fast_window >= slow_window:
+                continue
+
+            ema_fast = close.ewm(span=fast_window, adjust=False).mean()
+            ema_slow = close.ewm(span=slow_window, adjust=False).mean()
+            macd_line = ema_fast - ema_slow
+
+            for signal_window in macd_signal_windows:
+                signal_line = macd_line.ewm(span=signal_window, adjust=False).mean()
+                macd_hist = macd_line - signal_line
+
+                hist_cross_up = (macd_hist > 0) & (macd_hist.shift(1) <= 0)
+                hist_cross_down = (macd_hist < 0) & (macd_hist.shift(1) >= 0)
+
+                base_long_entries = hist_cross_up & (macd_line < 0)
+                base_short_entries = hist_cross_down & (macd_line > 0)
+
+                long_exits = hist_cross_down.fillna(False)
+                short_exits = hist_cross_up.fillna(False)
+
+                for cooldown in cooldown_bars:
+                    long_entries = _apply_cooldown(base_long_entries, cooldown)
+                    short_entries = _apply_cooldown(base_short_entries, cooldown)
+
+                    for atr_stop_multiplier in atr_stop_multipliers:
+                        sl_stop = ((atr14 * atr_stop_multiplier) / close).clip(lower=0.0001)
+                        for rr in rrs:
+                            tp_stop = sl_stop * rr
+                            portfolio = vbt.Portfolio.from_signals(
+                                close,
+                                entries=long_entries.astype(bool),
+                                exits=long_exits.astype(bool),
+                                short_entries=short_entries.astype(bool),
+                                short_exits=short_exits.astype(bool),
+                                init_cash=config.init_cash,
+                                fees=config.fees,
+                                slippage=config.slippage,
+                                sl_stop=sl_stop,
+                                tp_stop=tp_stop,
+                                freq=freq,
+                            )
+                            stats = portfolio.stats()
+                            results.append(
+                                {
+                                    "parameter_json": {
+                                        "macd_fast": int(fast_window),
+                                        "macd_slow": int(slow_window),
+                                        "macd_signal": int(signal_window),
+                                        "cooldown_bars": int(cooldown),
+                                        "atr_stop_multiplier": float(atr_stop_multiplier),
+                                        "rr": float(rr),
+                                    },
+                                    "total_return_pct": _float_metric(stats, "Total Return [%]"),
+                                    "total_trades": _int_metric(stats, "Total Trades"),
+                                    "win_rate": _float_metric(stats, "Win Rate [%]"),
+                                    "profit_factor": _float_metric(stats, "Profit Factor"),
+                                    "max_drawdown_pct": _float_metric(stats, "Max Drawdown [%]"),
+                                    "sharpe": _float_metric(stats, "Sharpe Ratio"),
+                                    "expectancy": _float_metric(stats, "Expectancy"),
+                                    "min_trades_for_rank": config.min_trades_for_rank,
+                                }
+                            )
+
+    ranked = sorted(results, key=_rank_key, reverse=True)
+    for index, item in enumerate(ranked, start=1):
+        item.pop("min_trades_for_rank", None)
+        item["rank"] = index
+
+    return QuantResearchResult(
+        run={
+            "run_id": _now_run_id(config.symbol),
+            "strategy": config.strategy,
+            "symbol": config.symbol,
+            "timeframe": config.timeframe.upper(),
             "data_from": config.from_date,
             "data_to": config.to_date,
             "init_cash": config.init_cash,

@@ -8,6 +8,7 @@
 - [x] 문제는 LLM이 충분히 공격적이지 않은 것만이 아니라, 전략 후보 생성 구조가 너무 좁다는 점입니다.
 - [x] 현재 구조는 `LLM agents decide trade -> Python validates`에 가깝습니다.
 - [x] 다음 단계는 `Python strategy candidates generate possible setups -> Python filters/scores -> LLM explains/selects among valid setups`로 피벗하는 것입니다.
+- [x] `새 전략을 즉시 실전/Paper로 승격하는 것`은 보류하지만, 연구용 quant baseline 추가 자체는 허용됩니다.
 
 ## 관측된 현상
 
@@ -100,6 +101,9 @@ Guardrail executes or blocks
 - [x] LLM 없이 Breakout baseline을 구현합니다.
   - `make quant-run QUANT_STRATEGY=breakout TIMEFRAME=M15 FILTER_TIMEFRAME=M30 FROM=... TO=...`로 실행합니다.
   - 최근 고가/저가 돌파, ATR 버퍼, RSI momentum, higher timeframe trend filter를 사용합니다.
+- [x] LLM 없이 MACD baseline을 구현합니다.
+  - `make quant-run QUANT_STRATEGY=macd TIMEFRAME=M15 FROM=... TO=...`로 실행합니다.
+  - MACD line, signal line, histogram cross를 사용한 momentum baseline입니다.
 - [x] 저장된 quant run을 비교하는 `make quant-summary`를 추가합니다.
   - 대화에 붙여넣은 결과가 아니라 SQLite `quant_runs`, `quant_results` 기준으로 전략별 rank 1 결과를 비교합니다.
   - 월별 비교가 필요하면 `SUMMARY_MONTHLY=1`로 `data_from` 월별 best run을 확인합니다.
@@ -124,8 +128,9 @@ Guardrail executes or blocks
 
 ## 현재 보류할 것
 
-- [ ] 새 전략을 즉시 추가하는 것은 보류합니다.
-  - 이유: 전략 수를 늘리기 전에 현재 Bollinger/MA가 왜 후보를 만들지 못하는지 데이터로 분리해야 합니다. 다만 breakout baseline은 이미 추가합니다.
+- [ ] 새 전략을 즉시 실전/Paper로 승격하는 것은 보류합니다.
+  - 이유: 전략 수를 늘리기 전에 현재 Bollinger/MA가 왜 후보를 만들지 못하는지 데이터로 분리해야 합니다.
+  - 허용 범위: 연구용 quant baseline은 추가할 수 있습니다. breakout baseline처럼 DB에 기록되는 실험용 전략은 허용됩니다.
 - [ ] LLM 프롬프트만 더 공격적으로 바꾸는 것은 보류합니다.
   - 이유: 통과 가능한 후보 자체가 적으면 프롬프트 변경은 검증 불가능한 주문을 늘릴 가능성이 큽니다.
 - [ ] live/paper 장기 운영은 보류합니다.

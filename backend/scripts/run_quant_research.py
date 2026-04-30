@@ -21,6 +21,7 @@ from backend.features.trading.quant_research import (
     run_bollinger_research,
     run_trend_pullback_reclaim_research,
     run_trend_pullback_research,
+    run_macd_research,
 )
 
 
@@ -43,7 +44,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--strategy",
         default="bollinger",
-        choices=["bollinger", "bollinger_mtf", "trend_pullback", "trend_pullback_reclaim", "breakout"],
+        choices=["bollinger", "bollinger_mtf", "trend_pullback", "trend_pullback_reclaim", "breakout", "macd"],
     )
     parser.add_argument("--init-cash", type=float, default=10000.0)
     parser.add_argument("--fees", type=float, default=0.0)
@@ -68,6 +69,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--breakout-atr-buffers", default="0.0,0.25,0.5")
     parser.add_argument("--breakout-rsi-lowers", default="50,55")
     parser.add_argument("--breakout-rsi-uppers", default="45,50")
+    parser.add_argument("--macd-fast-windows", default="12")
+    parser.add_argument("--macd-slow-windows", default="26")
+    parser.add_argument("--macd-signal-windows", default="9")
     parser.add_argument("--top", type=int, default=10)
     return parser.parse_args()
 
@@ -111,6 +115,9 @@ def main() -> None:
         breakout_atr_buffers=_parse_floats(args.breakout_atr_buffers),
         breakout_rsi_lowers=_parse_floats(args.breakout_rsi_lowers),
         breakout_rsi_uppers=_parse_floats(args.breakout_rsi_uppers),
+        macd_fast_windows=_parse_ints(args.macd_fast_windows),
+        macd_slow_windows=_parse_ints(args.macd_slow_windows),
+        macd_signal_windows=_parse_ints(args.macd_signal_windows),
     )
     if args.strategy in {"bollinger_mtf", "trend_pullback", "trend_pullback_reclaim"}:
         if not args.filter_timeframe:
@@ -150,6 +157,8 @@ def main() -> None:
     else:
         if args.strategy == "breakout":
             result = run_breakout_research(candles, None, config)
+        elif args.strategy == "macd":
+            result = run_macd_research(candles, config)
         else:
             result = run_bollinger_research(candles, config)
     run_id = persist_quant_research_result(args.data_db, result)

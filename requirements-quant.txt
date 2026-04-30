@@ -1,0 +1,3 @@
+# Optional quant research dependencies.
+# Install with `make install-quant`; not required for live/paper operation.
+vectorbt>=0.27.0

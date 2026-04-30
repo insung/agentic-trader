@@ -1,4 +1,4 @@
-.PHONY: test run run-wine trigger reconcile cli install venv migrate-legacy-data
+.PHONY: test run run-wine trigger reconcile cli install install-quant venv migrate-legacy-data quant-run quant-summary
 
 # 기본 환경 변수 설정
 export PYTHONPATH := .
@@ -52,8 +52,13 @@ install: venv
 	@echo "Installing dependencies..."
 	$(VENV_BIN)/pip install -r requirements.txt
 
+install-quant: install
+	@echo "Installing optional quant research dependencies..."
+	$(VENV_BIN)/pip install -r requirements-quant.txt
+
 # --- Backtesting Commands ---
 TIMEFRAMES ?= M15,M30
+TIMEFRAME ?= M15
 DAYS ?= 30
 FROM ?=
 TO ?=
@@ -103,6 +108,71 @@ backtest-run: venv
 		echo "Running agentic backtest from SQLite $(DATA_DB) ($(FROM) ~ $(TO))..."; \
 		$(VENV_BIN)/python -m backend.scripts.run_backtest $(BACKTEST_ARGS) --from "$(FROM)" --to "$(TO)"; \
 	fi
+
+QUANT_STRATEGY ?= bollinger
+INIT_CASH ?= 10000
+FEES ?= 0
+SLIPPAGE ?= 0
+FILTER_TIMEFRAME ?=
+BB_WINDOWS ?= 14,20,30
+BB_STDS ?= 1.8,2.0,2.2
+RSI_LOWERS ?= 25,30,35
+RSI_UPPERS ?= 65,70,75
+FILTER_RSI_LOWS ?= 45
+FILTER_RSI_HIGHS ?= 55
+RRS ?= 1.3,1.5,2.0
+STOP_PCTS ?= 0.01
+EMA_FAST_WINDOWS ?= 20
+EMA_SLOW_WINDOWS ?= 50
+PULLBACK_ATRS ?= 0.25,0.5,0.75
+ATR_STOP_MULTIPLIERS ?= 1.0,1.5
+TREND_RSI_LOWERS ?= 45
+TREND_RSI_UPPERS ?= 55
+RECLAIM_LOOKBACKS ?= 3,5,8
+COOLDOWN_BARS ?= 8,12,20
+TOP ?= 10
+SUMMARY_LIMIT ?= 50
+SUMMARY_STRATEGY ?=
+
+quant-run: venv
+	@if [ -z "$(FROM)" ] || [ -z "$(TO)" ]; then echo "FROM and TO are required for quant research. Example: make quant-run SYMBOL=BTCUSD TIMEFRAME=M15 FROM=2025-01-01 TO=2025-01-31"; exit 1; fi
+	$(VENV_BIN)/python -m backend.scripts.run_quant_research \
+		--data-db "$(DATA_DB)" \
+		--symbol $(SYMBOL) \
+		--timeframe $(TIMEFRAME) \
+		$(if $(FILTER_TIMEFRAME),--filter-timeframe $(FILTER_TIMEFRAME),) \
+		--from "$(FROM)" \
+		--to "$(TO)" \
+		--strategy $(QUANT_STRATEGY) \
+		--init-cash $(INIT_CASH) \
+		--fees $(FEES) \
+		--slippage $(SLIPPAGE) \
+		--bb-windows "$(BB_WINDOWS)" \
+		--bb-stds "$(BB_STDS)" \
+		--rsi-lowers "$(RSI_LOWERS)" \
+		--rsi-uppers "$(RSI_UPPERS)" \
+		--filter-rsi-lows "$(FILTER_RSI_LOWS)" \
+		--filter-rsi-highs "$(FILTER_RSI_HIGHS)" \
+		--rrs "$(RRS)" \
+		--stop-pcts "$(STOP_PCTS)" \
+		--ema-fast-windows "$(EMA_FAST_WINDOWS)" \
+		--ema-slow-windows "$(EMA_SLOW_WINDOWS)" \
+		--pullback-atrs "$(PULLBACK_ATRS)" \
+		--atr-stop-multipliers "$(ATR_STOP_MULTIPLIERS)" \
+		--trend-rsi-lowers "$(TREND_RSI_LOWERS)" \
+		--trend-rsi-uppers "$(TREND_RSI_UPPERS)" \
+		--reclaim-lookbacks "$(RECLAIM_LOOKBACKS)" \
+		--cooldown-bars "$(COOLDOWN_BARS)" \
+		--top $(TOP)
+
+quant-summary: venv
+	$(VENV_BIN)/python -m backend.scripts.summarize_quant_research \
+		--data-db "$(DATA_DB)" \
+		$(if $(SYMBOL),--symbol $(SYMBOL),) \
+		$(if $(FROM),--from "$(FROM)",) \
+		$(if $(TO),--to "$(TO)",) \
+		$(if $(SUMMARY_STRATEGY),--strategy $(SUMMARY_STRATEGY),) \
+		--limit $(SUMMARY_LIMIT)
 
 migrate-legacy-data: venv
 	@echo "Migrating legacy backtest/trading log artifacts into SQLite..."

@@ -158,6 +158,12 @@ PY
 `backtest_reports`
 : Markdown 백테스트 리포트 본문을 optional artifact/cache로 저장합니다. `report_path`, `chart_path`는 신규 저장 시 NULL이며, 차트는 `candles + backtest_runs + backtest_trades + backtest_decisions`로 재생성합니다.
 
+`quant_runs`
+: vectorbt 기반 빠른 전략 리서치 실행 요약입니다. LangGraph/LLM 백테스트와 분리된 baseline 연구 결과입니다.
+
+`quant_results`
+: quant research의 파라미터 조합별 성과입니다. rank, 거래 수, 수익률, profit factor, drawdown, parameter JSON을 저장합니다.
+
 `lessons`
 : 향후 자동 학습/RAG에 사용할 후보 lesson 저장소입니다. symbol, timeframe, strategy, market_regime, confidence, status 같은 scope 정보를 함께 둡니다.
 
@@ -186,6 +192,19 @@ SQLite에서 백테스트 실행:
 
 ```bash
 make backtest-run SYMBOL=BTCUSD TIMEFRAMES=M15,M30 FROM=2025-01-01 TO=2025-02-28
+```
+
+vectorbt quant research 실행:
+
+```bash
+make install-quant
+make quant-run SYMBOL=BTCUSD TIMEFRAME=M15 FROM=2025-01-01 TO=2025-02-28
+```
+
+저장된 quant 결과 요약:
+
+```bash
+make quant-summary SYMBOL=BTCUSD FROM=2025-01-01 TO=2025-02-28
 ```
 
 기존 CSV/JSON/Markdown 산출물 마이그레이션:

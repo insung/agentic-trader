@@ -31,7 +31,14 @@
 
 - [Trading Strategy Guide](./strategy/trading-strategy.md)
 - [MTF Strategy Guide](./strategy/mtf-strategy-guide.md)
+- [Strategy Research Pivot](./strategy/strategy-research-pivot.md)
+- [Strategy Document Template](./strategy/strategy-document-template.md)
 - [Runtime Strategy Documents](./trading-strategies/)
+
+## UX
+
+- [UX Planning Index](./ux/README.md)
+- [Operations UX Roadmap](./ux/operations-ux-roadmap.md)
 
 ## Roadmap
 

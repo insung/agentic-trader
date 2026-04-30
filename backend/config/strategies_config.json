@@ -16,15 +16,12 @@
     {
       "name": "Moving Average Crossover",
       "file": "ma_crossover.md",
-      "allowed_regimes": [
-        "Bullish",
-        "Bearish"
-      ],
+      "allowed_regimes": [],
       "required_timeframes": [
         "M15",
         "M30"
       ],
-      "description": "Trend-following strategy for strong directional markets."
+      "description": "Temporarily disabled for Bollinger-only backtest isolation."
     }
   ]
 }

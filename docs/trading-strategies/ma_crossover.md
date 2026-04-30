@@ -1,4 +1,35 @@
-# Moving Average Crossover Strategy (이동평균선 교차 전략)
+---
+name: Moving Average Crossover
+status: runtime
+strategy_type: trend_following
+registered_in: backend/config/strategies_config.json
+validator: backend/features/trading/strategy_validators.py
+required_timeframes:
+  - M15
+  - M30
+allowed_regimes:
+  - Bullish
+  - Bearish
+primary_timeframe: M15
+confirmation_timeframes:
+  - M30
+indicators:
+  - EMA20
+  - EMA50
+  - ADX14
+  - ATR14
+  - Bollinger Bands 20/2
+  - RSI14
+---
+
+# Moving Average Crossover (이동평균선 교차 전략)
+
+## Runtime Contract
+
+- 이 문서는 Strategist/Chief Trader가 읽는 전략 설명서입니다.
+- 주문 가능 여부는 `backend/features/trading/strategy_validators.py`의 deterministic gate가 최종 판단합니다.
+- 새로 추가하거나 수정한 조건은 `backend/config/strategies_config.json`, validator, 단위 테스트와 함께 맞춰야 합니다.
+- LLM은 계산을 직접 추정하지 말고 Python이 제공한 indicator snapshot의 값을 근거로만 판단해야 합니다.
 
 ## 1. 전략 개요 (Overview)
 - **종류:** 추세 추종 매매 (Trend Following)
@@ -25,7 +56,18 @@
 - **2차 익절가 (TP2):** 진입가 기준 SL 거리의 3배 (1:3 R/R). 잔여 비중 전량 청산.
 - **트레일링 스탑:** 1차 익절 달성 후, 나머지 비중의 SL을 진입가(손익분기점)로 이동합니다.
 
-## 4. 위험 경고 (AI 가이드라인)
+## 4. Deterministic Gate
+
+Python validator는 최소한 아래 조건을 다시 검산합니다.
+
+- SL 거리는 ATR14 기준 최소 거리 이상이어야 합니다.
+- ADX14는 추세 강도 최소값 이상이어야 합니다.
+- BUY는 EMA20 > EMA50, close > EMA20, 최근 bullish cross가 필요합니다.
+- SELL은 EMA20 < EMA50, close < EMA20, 최근 bearish cross가 필요합니다.
+- 상위 타임프레임이 반대 방향이면 차단합니다.
+- 볼린저 밴드와 RSI 기준으로 이미 과열/추격 진입이면 차단합니다.
+
+## 5. 위험 경고 (AI 가이드라인)
 - **횡보장 금지:** Market Regime이 "Ranging"일 때 이 전략을 사용하면 이동평균선이 자주 교차하여 연속 손절(Whipsaw)이 발생합니다.
 - **뉴스 이벤트:** 고용지표, 금리 결정 등 주요 경제 이벤트 직전/직후에는 이동평균선 교차가 노이즈일 수 있으므로 진입을 보류합니다.
 - **다이버전스:** EMA 교차와 MACD/RSI 다이버전스가 동시에 발생하면 신뢰도가 높아집니다. 반대로 교차만 발생하고 보조지표가 반대 신호를 보이면 진입을 보류합니다.

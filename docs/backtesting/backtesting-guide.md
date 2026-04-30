@@ -25,6 +25,135 @@
 `LOG_LEVEL=INFO`
 : JSONL 로그에 남길 최소 레벨을 지정합니다. 기본값은 `TRACE`라 모든 이벤트를 남깁니다. `INFO`는 run 시작/종료와 거래 open/close처럼 큰 이벤트만 남기고, `DEBUG`는 decision/review 이벤트까지, `TRACE`는 step/node timing까지 남깁니다.
 
+## vectorbt Quant Research
+
+`make quant-run`은 LangGraph/LLM을 호출하지 않고, SQLite에 저장된 캔들로 빠른 전략 리서치를 수행합니다. 현재 1차 대상은 Bollinger Reversion baseline이며, 결과는 `quant_runs`, `quant_results` 테이블에 저장합니다.
+
+처음 한 번 옵션 의존성을 설치합니다.
+
+```bash
+make install-quant
+```
+
+이미 수집된 캔들로 실행합니다. 새 캔들이 필요하면 먼저 `make backtest-fetch`로 MT5에서 SQLite에 저장합니다.
+
+```bash
+make quant-run \
+  SYMBOL=BTCUSD \
+  TIMEFRAME=M15 \
+  FROM=2025-01-01 \
+  TO=2025-01-31 \
+  QUANT_STRATEGY=bollinger \
+  INIT_CASH=10000
+```
+
+파라미터 스윕은 콤마 문자열로 조정합니다.
+
+```bash
+make quant-run \
+  SYMBOL=BTCUSD \
+  TIMEFRAME=M15 \
+  FROM=2025-01-01 \
+  TO=2025-03-31 \
+  BB_WINDOWS=14,20,30 \
+  BB_STDS=1.8,2.0,2.2 \
+  RSI_LOWERS=25,30,35 \
+  RSI_UPPERS=65,70,75 \
+  RRS=1.3,1.5,2.0 \
+  STOP_PCTS=0.01
+```
+
+이 결과는 전략 후보를 빠르게 거르는 연구용 baseline입니다. 좋은 결과가 나와도 자동으로 실전 전략으로 승격하지 않으며, 승격 시에는 전략 문서, config 등록, deterministic validator, 테스트를 별도 작업으로 추가해야 합니다.
+
+저장된 quant 결과는 `quant-summary`로 비교합니다.
+
+```bash
+make quant-summary \
+  SYMBOL=BTCUSD \
+  FROM=2025-01-01 \
+  TO=2025-03-31
+```
+
+특정 전략만 보고 싶다면 `SUMMARY_STRATEGY`를 사용합니다.
+
+```bash
+make quant-summary \
+  SYMBOL=BTCUSD \
+  FROM=2025-01-01 \
+  TO=2025-03-31 \
+  SUMMARY_STRATEGY=trend_pullback_reclaim
+```
+
+멀티 타임프레임 Bollinger + RSI 실험은 `bollinger_mtf`를 사용합니다. 기본 구조는 `TIMEFRAME`에서 진입 타이밍을 보고, `FILTER_TIMEFRAME`에서 강한 추세 역행 진입을 막는 단일 전략입니다.
+
+```bash
+make quant-run \
+  SYMBOL=BTCUSD \
+  TIMEFRAME=M15 \
+  FILTER_TIMEFRAME=M30 \
+  FROM=2025-01-01 \
+  TO=2025-03-31 \
+  QUANT_STRATEGY=bollinger_mtf \
+  FEES=0.0002 \
+  SLIPPAGE=0.0002
+```
+
+`bollinger_mtf`의 현재 규칙:
+
+- M15 Long 후보: 하단 밴드 근처, RSI 과매도, 양봉 또는 하단 밴드 재진입
+- M15 Short 후보: 상단 밴드 근처, RSI 과매수, 음봉 또는 상단 밴드 재진입
+- M30 Long 필터: M30 `EMA20 < EMA50`이고 RSI가 `FILTER_RSI_LOWS` 아래면 Long 금지
+- M30 Short 필터: M30 `EMA20 > EMA50`이고 RSI가 `FILTER_RSI_HIGHS` 위면 Short 금지
+- 청산/리스크: 중심선 청산, `STOP_PCTS`, `RRS` 기반 vectorbt SL/TP 실험
+
+추세추종 눌림목 baseline은 `trend_pullback`을 사용합니다. 평균회귀 Bollinger 계열과 비교하기 위한 전략이며, `FILTER_TIMEFRAME`이 필수입니다.
+
+```bash
+make quant-run \
+  SYMBOL=BTCUSD \
+  TIMEFRAME=M15 \
+  FILTER_TIMEFRAME=M30 \
+  FROM=2025-01-01 \
+  TO=2025-03-31 \
+  QUANT_STRATEGY=trend_pullback \
+  FEES=0.0002 \
+  SLIPPAGE=0.0002
+```
+
+`trend_pullback`의 현재 규칙:
+
+- M15 Long 후보: `EMA_FAST > EMA_SLOW`, EMA fast 근처 눌림, 양봉 재개, RSI가 `TREND_RSI_LOWERS` 이상
+- M15 Short 후보: `EMA_FAST < EMA_SLOW`, EMA fast 근처 반등, 음봉 재개, RSI가 `TREND_RSI_UPPERS` 이하
+- M30 필터: Long은 M30 `EMA20 > EMA50`, Short는 M30 `EMA20 < EMA50`일 때만 허용
+- SL/TP: `ATR14 * ATR_STOP_MULTIPLIERS`를 진입가 대비 비율로 변환해 `sl_stop`으로 쓰고, `RRS`로 `tp_stop`을 계산
+- 주요 스윕 변수: `PULLBACK_ATRS`, `ATR_STOP_MULTIPLIERS`, `RRS`, `TREND_RSI_LOWERS`, `TREND_RSI_UPPERS`
+
+`trend_pullback`이 거래 과다와 빠른 EMA20 exit로 실패한 경우, 더 엄격한 개선판 `trend_pullback_reclaim`을 사용합니다. 기존 실패 baseline은 비교를 위해 보존합니다.
+
+```bash
+make quant-run \
+  SYMBOL=BTCUSD \
+  TIMEFRAME=M15 \
+  FILTER_TIMEFRAME=M30 \
+  FROM=2025-01-01 \
+  TO=2025-03-31 \
+  QUANT_STRATEGY=trend_pullback_reclaim \
+  FEES=0.0002 \
+  SLIPPAGE=0.0002 \
+  ATR_STOP_MULTIPLIERS=2.0,3.0 \
+  RRS=2.0,3.0
+```
+
+`trend_pullback_reclaim`의 현재 규칙:
+
+- Long: `EMA_FAST > EMA_SLOW`, 최근 `RECLAIM_LOOKBACKS` 안에 EMA fast 아래 종가가 있었고, 현재 EMA fast 위로 재진입
+- Short: `EMA_FAST < EMA_SLOW`, 최근 `RECLAIM_LOOKBACKS` 안에 EMA fast 위 종가가 있었고, 현재 EMA fast 아래로 재진입
+- MTF 필터 강화: Long은 higher timeframe `close > EMA20 > EMA50`, Short는 `close < EMA20 < EMA50`
+- RSI 회복: Long은 최근 RSI 과매도권 이후 `TREND_RSI_LOWERS` 이상, Short는 최근 RSI 과매수권 이후 `TREND_RSI_UPPERS` 이하
+- Cooldown: 신호 발생 후 `COOLDOWN_BARS` 동안 같은 방향 재진입을 막음
+- Exit 완화: EMA20이 아니라 EMA50 이탈 또는 EMA fast/slow 추세 반전 때 조건부 청산
+- 기본 실험 변수: `RECLAIM_LOOKBACKS=3,5,8`, `COOLDOWN_BARS=8,12,20`, `ATR_STOP_MULTIPLIERS=2.0,3.0`, `RRS=2.0,3.0`
+
 ## 먼저 테스트할 목록
 
 1. 기본 코드 테스트

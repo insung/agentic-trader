@@ -150,6 +150,38 @@ SCHEMA_STATEMENTS = [
       FOREIGN KEY (run_id) REFERENCES backtest_runs(run_id)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS quant_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL UNIQUE,
+      strategy TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      timeframe TEXT NOT NULL,
+      data_from TEXT NOT NULL,
+      data_to TEXT NOT NULL,
+      init_cash REAL NOT NULL,
+      fees REAL NOT NULL DEFAULT 0.0,
+      slippage REAL NOT NULL DEFAULT 0.0,
+      created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS quant_results (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL,
+      parameter_json TEXT NOT NULL,
+      total_return_pct REAL,
+      total_trades INTEGER NOT NULL DEFAULT 0,
+      win_rate REAL,
+      profit_factor REAL,
+      max_drawdown_pct REAL,
+      sharpe REAL,
+      expectancy REAL,
+      rank INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (run_id) REFERENCES quant_runs(run_id)
+    )
+    """,
 ]
 
 
@@ -741,6 +773,74 @@ def store_backtest_report(
         )
         conn.commit()
     return report_id
+
+
+def persist_quant_research_result(db_path: str, result: Any) -> str:
+    """Persist one vectorbt quant research run and its ranked parameter results."""
+    init_backtest_db(db_path)
+    run = result.run
+    rows = result.results
+    run_id = str(run["run_id"])
+    created_at = _now_iso()
+
+    with _connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO quant_runs (
+                run_id, strategy, symbol, timeframe, data_from, data_to,
+                init_cash, fees, slippage, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(run_id) DO UPDATE SET
+                strategy = excluded.strategy,
+                symbol = excluded.symbol,
+                timeframe = excluded.timeframe,
+                data_from = excluded.data_from,
+                data_to = excluded.data_to,
+                init_cash = excluded.init_cash,
+                fees = excluded.fees,
+                slippage = excluded.slippage
+            """,
+            (
+                run_id,
+                run["strategy"],
+                run["symbol"],
+                run["timeframe"],
+                run["data_from"],
+                run["data_to"],
+                float(run["init_cash"]),
+                float(run.get("fees", 0.0) or 0.0),
+                float(run.get("slippage", 0.0) or 0.0),
+                created_at,
+            ),
+        )
+        conn.execute("DELETE FROM quant_results WHERE run_id = ?", (run_id,))
+        conn.executemany(
+            """
+            INSERT INTO quant_results (
+                run_id, parameter_json, total_return_pct, total_trades,
+                win_rate, profit_factor, max_drawdown_pct, sharpe,
+                expectancy, rank, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    run_id,
+                    _json_text(row.get("parameter_json", {})),
+                    row.get("total_return_pct"),
+                    int(row.get("total_trades", 0) or 0),
+                    row.get("win_rate"),
+                    row.get("profit_factor"),
+                    row.get("max_drawdown_pct"),
+                    row.get("sharpe"),
+                    row.get("expectancy"),
+                    int(row["rank"]),
+                    created_at,
+                )
+                for row in rows
+            ],
+        )
+        conn.commit()
+    return run_id
 
 
 def load_backtest_replay(db_path: str, run_id: str) -> Dict[str, Any]:

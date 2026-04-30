@@ -33,6 +33,8 @@ Agentic Trader의 MTF 엔진은 다음과 같이 작동합니다:
 }
 ```
 
+`file`은 런타임 전략 폴더인 `docs/trading-strategies/` 아래의 파일명을 가리킵니다. `docs/strategy/`의 예시 문서는 연구용이므로, 주문 가능 전략으로 승격할 때는 같은 형식의 문서를 `docs/trading-strategies/`에 두고 validator와 테스트를 함께 추가해야 합니다.
+
 ### 💡 작동 원리
 - 만약 사용자가 `make backtest-run TIMEFRAMES=M5` 로 백테스트를 돌리면?
   👉 H1 데이터가 부족하므로, AI는 이 전략을 **자동으로 무시**합니다.
@@ -43,7 +45,9 @@ Agentic Trader의 MTF 엔진은 다음과 같이 작동합니다:
 
 ## 3. MTF 전략 문서 작성법 (Markdown)
 
-`docs/trading-strategies/` 내에 작성하는 마크다운 전략 파일은 인간의 언어로 **"어느 타임프레임에서 무엇을 볼지"** 명확히 지시해야 합니다. `docs/trading-strategies/mtf_example.md` 파일을 열어 구체적인 예시를 확인하세요.
+`docs/trading-strategies/` 내에 작성하는 마크다운 전략 파일은 인간의 언어로 **"어느 타임프레임에서 무엇을 볼지"** 명확히 지시해야 합니다. 새 전략은 `docs/strategy/strategy-document-template.md` 형식을 먼저 복사하고, 등록 전 연구/예시는 `docs/strategy/mtf_example.md` 파일을 참고하세요.
+
+프론트매터는 전략명, 요구 타임프레임, 허용 regime, 사용 지표를 빠르게 검토하기 위한 메타데이터입니다. 현재 런타임의 source of truth는 여전히 `backend/config/strategies_config.json`과 deterministic validator이므로, 프론트매터만 추가해서는 주문 가능 전략이 되지 않습니다.
 
 ---
 

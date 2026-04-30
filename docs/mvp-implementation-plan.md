@@ -20,13 +20,14 @@ agentic-trader/
 │   │   ├── nodes.py         # 각 에이전트의 로직 (LLM 호출 포함)
 │   │   └── state.py         # 노드 간 주고받는 상태(State) 스키마
 │   └── main.py              # FastAPI 서버 실행 진입점 (Wine 내부 구동)
-├── docs/                    # 아키텍처, 실행 가이드, 저장소, 전략 문서
+├── docs/                    # 아키텍처, 실행 가이드, 저장소, 전략/UX 문서
 │   ├── README.md            # 문서 색인
 │   ├── architecture/        # 비전, 시스템 플로우, 에이전트 워크플로우
 │   ├── backtesting/         # 백테스트 실행 절차
 │   ├── guides/              # 운영/테스트/MT5 실행 가이드
 │   ├── storage/             # SQLite 스키마, replayable data 원칙
 │   ├── strategy/            # 전략 작성/MTF 가이드
+│   ├── ux/                  # 운영 콘솔, 전략 워크벤치, 백테스트 UX 계획
 │   └── trading-strategies/  # 런타임에 주입되는 전략 지식 파일
 ├── tests/                   # 단위 테스트 및 백테스트
 ├── backtests/               # ignored generated data/results/reports
@@ -105,17 +106,19 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
 
 ### 현재 부족한 부분 요약 (2026-04 기준)
 *   **백테스트 속도와 재현성:** 현재 백테스트는 각 Step마다 LangGraph와 LLM을 호출하므로 느리고, 같은 데이터라도 LLM 응답/외부 API 상태에 따라 결과가 흔들릴 수 있습니다. 빠른 반복 실험을 위해 LLM 응답 캐시, deterministic replay, `--from/--to`, `--max-steps` 같은 부분 실행 옵션이 필요합니다.
-*   **성과 비교/재생 UI 부족:** 백테스트 OHLCV, 실행 run, trade, decision은 SQLite에 구조화되었고, 리포트 path 없이도 `run_id` 기준 차트 재생성이 가능해졌습니다. 다음 단계는 이 데이터를 사용해 전략별/기간별/타임프레임별 성과 비교 화면과 blocked-trade audit 리포트를 만드는 것입니다.
+*   **무매매 백테스트 반복:** 최근 BTCUSD 백테스트에서 `0 trades`가 반복되었습니다. LLM이 무에서 주문을 만들고 Python이 사후 검증하는 구조보다, Python이 먼저 후보 setup을 생성하고 LLM이 후보를 설명/선택하는 연구 루프로 피벗합니다. 상세 계획은 `docs/strategy/strategy-research-pivot.md`를 기준으로 관리합니다.
+*   **운영 UX 통합 부족:** 전략 문서, config, validator, 백테스트 결과, guardrail이 여러 파일과 DB에 흩어져 있습니다. 사람이 수동으로 운영할 수 있는 화면과 API 계획은 `docs/ux/operations-ux-roadmap.md`를 기준으로 관리합니다.
 *   **전략 검증은 시작 단계:** MA/Bollinger validator는 생겼지만, 아직 전략별 파라미터 튜닝, walk-forward 검증, out-of-sample 검증, 비용/스프레드/슬리피지 반영이 부족합니다. 현재 결과는 실제 체결 환경보다 낙관적일 수 있습니다.
 *   **운영 상태 저장이 취약:** 열린 포지션과 복기 상태가 로컬 JSON 중심이라 재시작/동시 실행/중복 처리에 취약합니다. 운영 단계에서는 SQLite 이상으로 옮겨 원자적 업데이트와 중복 방지를 보장해야 합니다.
 *   **세션 간 실행 기억 구조화 부족:** `AGENTS.md`를 Codex/Gemini/Antigravity 공통 SSOT로 정리했지만, 최근 실험 결과와 운영 지표는 아직 Markdown/JSON 중심입니다. 향후 SQLite/Vector DB 기반의 검색 가능한 기억 구조가 필요합니다.
-*   **관측 가능성 부족:** 주문 차단 사유, LLM 판단, validator 통과/실패, MT5 응답, reconcile 결과를 한눈에 보는 로그/대시보드/알림 체계가 필요합니다.
+*   **관측 가능성 부족:** 주문 차단 사유, LLM 판단, validator 통과/실패, MT5 응답, reconcile 결과를 구조화해서 저장하고 조회해야 합니다. 사용자-facing 대시보드/감사 화면은 `docs/ux/operations-ux-roadmap.md`로 분리합니다.
 
 ### 문서 구조 정리 (2026-04-27 반영)
 *   [x] `docs/README.md`를 문서 색인으로 추가하고, 문서를 `architecture/`, `backtesting/`, `guides/`, `storage/`, `strategy/` 하위 디렉터리로 분류했습니다.
 *   [x] 런타임 전략 지식 파일은 코드가 동적으로 참조하는 경로이므로 `docs/trading-strategies/`에 유지합니다.
 *   [x] `AGENTS.md`, `README.md`, 이 문서의 새 세션 시작 경로를 재분류된 문서 구조에 맞춰 갱신했습니다.
 *   [x] 백테스트 DB 저장 개선, optional report artifact, runtime candle persistence 원칙을 `docs/backtesting/`, `docs/storage/`, `docs/guides/` 문서에 나누어 반영했습니다.
+*   [x] 운영 UX 계획을 `docs/ux/operations-ux-roadmap.md`로 분리하고, MVP 문서는 장기 로드맵과 링크만 유지합니다.
 
 ### AI 세션 지식 축적 프로토콜 (필수 운영 규칙)
 새 AI 세션이 매번 프로젝트를 처음부터 다시 추론하지 않도록, 지식을 다음 3층으로 나누어 축적합니다.
@@ -172,6 +175,8 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
     *   [x] 기존 CSV/JSON/Markdown 산출물을 SQLite로 옮기는 `make migrate-legacy-data` 경로를 추가합니다.
     *   [x] `run_backtest.py`에 `--start-step`, `--max-steps`, `--no-review`, `--log-level` 옵션을 추가하여 짧은 디버그 실행과 긴 검증 실행을 분리합니다. `make backtest-run`에서는 `START_STEP`, `MAX_STEPS`, `NO_REVIEW`, `LOG_LEVEL`로 전달합니다.
     *   [x] 백테스트 JSONL 구조화 로그를 `backtests/logs/backtest_<run_id>.jsonl`에 남깁니다. step/node별 `elapsed_ms`, decision status, rejection reason, trade open/close 이벤트를 기록하여 병목과 손실 원인을 추적합니다.
+    *   [x] vectorbt 기반 quant research 경로를 추가했습니다. `make install-quant`로 옵션 의존성을 설치하고, `make quant-run`으로 SQLite `candles`에서 Bollinger baseline, Bollinger MTF baseline, Trend Pullback baseline, Trend Pullback Reclaim baseline 파라미터 스윕을 실행해 `quant_runs`, `quant_results`에 저장합니다.
+    *   반복된 `0 trades` run을 분석하는 No-Trade Audit을 추가합니다. 상세 체크리스트는 `docs/strategy/strategy-research-pivot.md`를 기준으로 합니다.
     *   동일한 `(symbol, timeframes, candle_time, raw_data, prompt_version)` 조합의 LLM 응답을 캐시하여 반복 백테스트 비용과 시간을 줄입니다.
     *   LLM 호출 없이 저장된 의사결정 캐시를 재생하는 deterministic replay 모드를 추가합니다.
     *   SQLite 결과 테이블을 활용해 전략별 성과를 비교합니다.
@@ -185,6 +190,7 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
     *   전략별 파라미터(`min_adx`, `min_sl_atr`, Bollinger tolerance, risk_pct)를 config화하고 grid/random search를 수행합니다.
     *   성과 기준을 단순 PnL이 아니라 Profit Factor, MDD, 기대값, 연속 손실, 거래 빈도, 평균 보유 시간으로 평가합니다.
     *   “거래하지 않아서 피한 손실”과 “차단 때문에 놓친 수익”을 함께 분석하는 blocked-trade audit 리포트를 만듭니다.
+    *   최근 BTCUSD 백테스트를 더 누적한 뒤, MA 교차 이후 이미 진행 중인 추세에서 눌림목으로 진입하는 `Trend Pullback / Continuation` 전략을 추가할지 검토합니다. 추가 시에는 `docs/trading-strategies/` 문서, `backend/config/strategies_config.json` 등록, deterministic validator, 단위 테스트를 한 세트로 작성합니다.
     *   최소 표본 수 미달 전략은 실전 후보로 승격하지 않는 기준을 둡니다.
 
 ### Phase 7: RAG 자기학습 루프 완성 (예정)
@@ -202,10 +208,8 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
     *   고영향 이벤트 전후에는 신규 진입을 제한하거나 포지션 크기를 축소하는 정책을 백엔드 가드레일과 연결합니다.
     *   외부 API 장애 시에는 Sentiment 노드를 건너뛰되, 해당 결측 상태를 Chief Trader에게 명시적으로 전달합니다.
 
-### Phase 9: 모니터링 대시보드 및 다중 자산 포트폴리오 (예정)
-*   **목표:** 운영 상태를 사람이 빠르게 점검할 수 있게 만들고, 단일 종목을 넘어 포트폴리오 단위로 확장합니다.
+### Phase 9: 다중 자산 포트폴리오 및 운영 UX (예정)
+*   **목표:** 단일 종목을 넘어 포트폴리오 단위로 확장하고, 운영 UX는 별도 로드맵에 따라 사람이 수동으로 이해/조작 가능한 콘솔로 발전시킵니다.
 *   **계획:**
-    *   FastAPI 기반의 상태 조회 API와 React/Vue 대시보드를 구축합니다.
-    *   현재 포지션, 추적 중인 ticket, 최근 AI 판단, 최근 복기, 일일 손익, 가드레일 차단 내역을 한 화면에서 확인합니다.
-    *   Telegram/Discord/Email 알림으로 주문 체결, 청산, 복기 생성, 오류 상태를 전송합니다.
+    *   운영 UX 상세 계획은 `docs/ux/operations-ux-roadmap.md`에서 관리합니다.
     *   EURUSD 단일 종목에서 벗어나 나스닥(US100), 금(XAUUSD), 비트코인(BTCUSD) 등 다중 자산 병렬 트레이딩 파이프라인 가동.

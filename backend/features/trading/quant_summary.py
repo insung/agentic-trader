@@ -215,16 +215,12 @@ def format_quant_summary(rows: List[Dict[str, Any]]) -> str:
             ]
         )
 
-    widths = [
-        min(max(len(headers[index]), *(len(row[index]) for row in rendered_rows)), 48)
-        for index in range(len(headers))
-    ]
+    widths = [max(len(headers[index]), *(len(row[index]) for row in rendered_rows)) for index in range(len(headers))]
 
     def render_line(values: List[str]) -> str:
         cells = []
         for index, value in enumerate(values):
-            truncated = value if len(value) <= widths[index] else value[: widths[index] - 1] + "…"
-            cells.append(truncated.ljust(widths[index]))
+            cells.append(value.ljust(widths[index]))
         return "  ".join(cells)
 
     lines = [render_line(headers), render_line(["-" * width for width in widths])]
@@ -267,16 +263,12 @@ def format_quant_monthly_summary(rows: List[Dict[str, Any]]) -> str:
             ]
         )
 
-    widths = [
-        min(max(len(headers[index]), *(len(row[index]) for row in rendered_rows)), 48)
-        for index in range(len(headers))
-    ]
+    widths = [max(len(headers[index]), *(len(row[index]) for row in rendered_rows)) for index in range(len(headers))]
 
     def render_line(values: List[str]) -> str:
         cells = []
         for index, value in enumerate(values):
-            truncated = value if len(value) <= widths[index] else value[: widths[index] - 1] + "…"
-            cells.append(truncated.ljust(widths[index]))
+            cells.append(value.ljust(widths[index]))
         return "  ".join(cells)
 
     lines = [render_line(headers), render_line(["-" * width for width in widths])]

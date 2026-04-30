@@ -1,6 +1,8 @@
 from backend.features.trading import backtest_store
 from backend.features.trading.quant_research import QuantResearchResult
 from backend.features.trading.quant_summary import (
+    format_quant_monthly_summary,
+    format_quant_summary,
     summarize_quant_runs,
     summarize_quant_runs_by_month,
 )
@@ -354,3 +356,69 @@ def test_summarize_quant_runs_by_month_filters_by_run_id(tmp_path):
     assert len(rows) == 1
     assert rows[0]["month_key"] == "2025-02"
     assert rows[0]["run_id"] == "QR-FEB"
+
+
+def test_format_quant_summary_does_not_truncate_parameters():
+    text = format_quant_summary(
+        [
+            {
+                "run_id": "QR-LONG",
+                "strategy": "breakout",
+                "timeframe_label": "M15/M30",
+                "total_return_pct": 2.997,
+                "profit_factor": 1.082,
+                "max_drawdown_pct": 7.813,
+                "total_trades": 125,
+                "parameters": {
+                    "ema_fast": 20,
+                    "ema_slow": 50,
+                    "filter_timeframe": "M30",
+                    "breakout_lookback": 50,
+                    "breakout_atr_buffer": 0.25,
+                    "cooldown_bars": 20,
+                    "atr_stop_multiplier": 1.0,
+                    "breakout_rsi_lower": 50.0,
+                    "breakout_rsi_upper": 50.0,
+                    "rr": 1.3,
+                },
+            }
+        ]
+    )
+
+    assert "breakout_lookback=50" in text
+    assert "breakout_atr_buffer=0.25" in text
+    assert "…" not in text
+
+
+def test_format_quant_monthly_summary_does_not_truncate_parameters():
+    text = format_quant_monthly_summary(
+        [
+            {
+                "month_key": "2025-01",
+                "run_id": "QR-LONG",
+                "strategy": "breakout",
+                "timeframe_label": "M15/M30",
+                "total_return_pct": 2.997,
+                "profit_factor": 1.082,
+                "max_drawdown_pct": 7.813,
+                "total_trades": 125,
+                "month_run_count": 1,
+                "parameters": {
+                    "ema_fast": 20,
+                    "ema_slow": 50,
+                    "filter_timeframe": "M30",
+                    "breakout_lookback": 50,
+                    "breakout_atr_buffer": 0.25,
+                    "cooldown_bars": 20,
+                    "atr_stop_multiplier": 1.0,
+                    "breakout_rsi_lower": 50.0,
+                    "breakout_rsi_upper": 50.0,
+                    "rr": 1.3,
+                },
+            }
+        ]
+    )
+
+    assert "breakout_lookback=50" in text
+    assert "breakout_atr_buffer=0.25" in text
+    assert "…" not in text

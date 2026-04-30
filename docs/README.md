@@ -32,6 +32,8 @@
 - [Trading Strategy Guide](./strategy/trading-strategy.md)
 - [MTF Strategy Guide](./strategy/mtf-strategy-guide.md)
 - [Strategy Research Pivot](./strategy/strategy-research-pivot.md)
+- [Strategy Addition Mechanism](./strategy/strategy-addition-mechanism.md)
+- [Quant Research Next Steps](./strategy/quant-research-next-steps.md)
 - [Strategy Document Template](./strategy/strategy-document-template.md)
 - [Runtime Strategy Documents](./trading-strategies/)
 

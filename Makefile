@@ -130,6 +130,8 @@ TREND_RSI_LOWERS ?= 45
 TREND_RSI_UPPERS ?= 55
 RECLAIM_LOOKBACKS ?= 3,5,8
 COOLDOWN_BARS ?= 8,12,20
+MA_ADX_MINS ?= 25,30
+MA_MAX_CROSS_AGE_BARS ?= 3,6
 BREAKOUT_LOOKBACKS ?= 20,30,50
 BREAKOUT_ATR_BUFFERS ?= 0.0,0.25,0.5
 BREAKOUT_RSI_LOWERS ?= 50,55
@@ -181,6 +183,8 @@ quant-run: venv
 		--trend-rsi-uppers "$(TREND_RSI_UPPERS)" \
 		--reclaim-lookbacks "$(RECLAIM_LOOKBACKS)" \
 		--cooldown-bars "$(COOLDOWN_BARS)" \
+		--ma-adx-mins "$(MA_ADX_MINS)" \
+		--ma-max-cross-age-bars "$(MA_MAX_CROSS_AGE_BARS)" \
 		--breakout-lookbacks "$(BREAKOUT_LOOKBACKS)" \
 		--breakout-atr-buffers "$(BREAKOUT_ATR_BUFFERS)" \
 		--breakout-rsi-lowers "$(BREAKOUT_RSI_LOWERS)" \

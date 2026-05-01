@@ -12,6 +12,7 @@ from backend.features.trading.quant_research import (
     run_breakout_research,
     run_bollinger_research,
     run_bollinger_mtf_research,
+    run_ma_crossover_research,
     run_macd_research,
     run_random_research,
     run_no_trade_research,
@@ -304,6 +305,41 @@ def test_run_trend_pullback_reclaim_research_uses_reclaim_and_cooldown(tmp_path,
     assert result.results[0]["parameter_json"]["reclaim_lookback"] == 5
     assert result.results[0]["parameter_json"]["cooldown_bars"] == 8
     assert result.results[0]["parameter_json"]["atr_stop_multiplier"] == 2.0
+
+
+def test_run_ma_crossover_research_uses_filter_timeframe_and_adx(tmp_path, monkeypatch):
+    monkeypatch.setitem(sys.modules, "vectorbt", SimpleNamespace(Portfolio=_FakePortfolio))
+    _FakePortfolio.call_count = 0
+    _FakePortfolio.last_kwargs = {}
+
+    result = run_ma_crossover_research(
+        _sample_candles(),
+        _sample_candles(periods=40),
+        QuantResearchConfig(
+            symbol="BTCUSD",
+            timeframe="M15",
+            filter_timeframe="M30",
+            from_date="2025-01-01",
+            to_date="2025-01-01",
+            strategy="ma_crossover",
+            ema_fast_windows=[20],
+            ema_slow_windows=[50],
+            ma_adx_mins=[25],
+            ma_max_cross_age_bars=[6],
+            cooldown_bars=[8],
+            atr_stop_multipliers=[1.0],
+            rrs=[2.0],
+        ),
+    )
+
+    assert _FakePortfolio.call_count == 1
+    assert result.run["strategy"] == "ma_crossover"
+    assert result.run["filter_timeframe"] == "M30"
+    assert _FakePortfolio.last_kwargs["entries"].dtype == bool
+    assert _FakePortfolio.last_kwargs["short_entries"].dtype == bool
+    assert _FakePortfolio.last_kwargs["sl_stop"].notna().any()
+    assert result.results[0]["parameter_json"]["ma_adx_min"] == 25.0
+    assert result.results[0]["parameter_json"]["max_cross_age_bars"] == 6
 
 
 def test_run_breakout_research_supports_optional_filter_timeframe(tmp_path, monkeypatch):

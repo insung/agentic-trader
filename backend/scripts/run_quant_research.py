@@ -20,6 +20,7 @@ from backend.features.trading.quant_research import (
     run_breakout_research,
     run_bollinger_mtf_research,
     run_bollinger_research,
+    run_ma_crossover_research,
     run_macd_research,
     run_random_research,
     run_no_trade_research,
@@ -52,6 +53,7 @@ def parse_args() -> argparse.Namespace:
             "bollinger_mtf",
             "trend_pullback",
             "trend_pullback_reclaim",
+            "ma_crossover",
             "breakout",
             "macd",
             "buy_hold",
@@ -78,6 +80,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--trend-rsi-uppers", default="55")
     parser.add_argument("--reclaim-lookbacks", default="3,5,8")
     parser.add_argument("--cooldown-bars", default="8,12,20")
+    parser.add_argument("--ma-adx-mins", default="25,30")
+    parser.add_argument("--ma-max-cross-age-bars", default="3,6")
     parser.add_argument("--breakout-lookbacks", default="20,30,50")
     parser.add_argument("--breakout-atr-buffers", default="0.0,0.25,0.5")
     parser.add_argument("--breakout-rsi-lowers", default="50,55")
@@ -129,6 +133,8 @@ def main() -> None:
         trend_rsi_uppers=_parse_floats(args.trend_rsi_uppers),
         reclaim_lookbacks=_parse_ints(args.reclaim_lookbacks),
         cooldown_bars=_parse_ints(args.cooldown_bars),
+        ma_adx_mins=_parse_floats(args.ma_adx_mins),
+        ma_max_cross_age_bars=_parse_ints(args.ma_max_cross_age_bars),
         breakout_lookbacks=_parse_ints(args.breakout_lookbacks),
         breakout_atr_buffers=_parse_floats(args.breakout_atr_buffers),
         breakout_rsi_lowers=_parse_floats(args.breakout_rsi_lowers),
@@ -142,7 +148,7 @@ def main() -> None:
         random_min_hold_bars=args.random_min_hold_bars,
         random_max_hold_bars=args.random_max_hold_bars,
     )
-    if args.strategy in {"bollinger_mtf", "trend_pullback", "trend_pullback_reclaim"}:
+    if args.strategy in {"bollinger_mtf", "trend_pullback", "trend_pullback_reclaim", "ma_crossover"}:
         if not args.filter_timeframe:
             raise SystemExit(f"--filter-timeframe is required for {args.strategy}")
         filter_candles = load_candles(
@@ -161,6 +167,8 @@ def main() -> None:
             result = run_bollinger_mtf_research(candles, filter_candles, config)
         elif args.strategy == "trend_pullback":
             result = run_trend_pullback_research(candles, filter_candles, config)
+        elif args.strategy == "ma_crossover":
+            result = run_ma_crossover_research(candles, filter_candles, config)
         else:
             result = run_trend_pullback_reclaim_research(candles, filter_candles, config)
     elif args.strategy == "breakout" and args.filter_timeframe:
@@ -193,7 +201,7 @@ def main() -> None:
     run_id = persist_quant_research_result(args.data_db, result)
 
     print(f"✅ Quant research complete: {run_id}")
-    if args.strategy in {"bollinger_mtf", "trend_pullback", "trend_pullback_reclaim"} or (
+    if args.strategy in {"bollinger_mtf", "trend_pullback", "trend_pullback_reclaim", "ma_crossover"} or (
         args.strategy == "breakout" and args.filter_timeframe
     ):
         print(f"   Symbol/timeframes: {args.symbol} {args.timeframe}+{args.filter_timeframe}")

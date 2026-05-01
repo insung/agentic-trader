@@ -46,6 +46,8 @@ class QuantResearchConfig:
     breakout_atr_buffers: List[float] | None = None
     breakout_rsi_lowers: List[float] | None = None
     breakout_rsi_uppers: List[float] | None = None
+    ma_adx_mins: List[float] | None = None
+    ma_max_cross_age_bars: List[int] | None = None
     macd_fast_windows: List[int] | None = None
     macd_slow_windows: List[int] | None = None
     macd_signal_windows: List[int] | None = None
@@ -113,6 +115,37 @@ def _atr(df: pd.DataFrame, window: int = 14) -> pd.Series:
     return true_range.rolling(window).mean()
 
 
+def _adx(df: pd.DataFrame, window: int = 14) -> pd.Series:
+    high = df["high"].astype(float)
+    low = df["low"].astype(float)
+    close = df["close"].astype(float)
+
+    prev_high = high.shift(1)
+    prev_low = low.shift(1)
+    prev_close = close.shift(1)
+
+    up_move = high - prev_high
+    down_move = prev_low - low
+
+    plus_dm = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
+    minus_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
+
+    true_range = pd.concat(
+        [
+            (high - low).abs(),
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+    atr = true_range.rolling(window).mean()
+    plus_di = 100 * plus_dm.rolling(window).mean() / atr
+    minus_di = 100 * minus_dm.rolling(window).mean() / atr
+    di_sum = plus_di + minus_di
+    dx = ((plus_di - minus_di).abs() / di_sum.replace(0, pd.NA)) * 100
+    return dx.rolling(window).mean()
+
+
 def _bollinger_parts(close: pd.Series, window: int, std_multiplier: float) -> tuple[pd.Series, pd.Series, pd.Series]:
     mid = close.rolling(window).mean()
     std = close.rolling(window).std()
@@ -159,6 +192,14 @@ def _apply_cooldown(signals: pd.Series, bars: int) -> pd.Series:
         if allow:
             last_signal_index = index
     return pd.Series(cooled, index=signals.index, dtype=bool)
+
+
+def _bars_since_last_true(signals: pd.Series) -> pd.Series:
+    active = signals.fillna(False).astype(bool)
+    positions = pd.Series(range(len(active)), index=signals.index, dtype=float)
+    last_true_positions = positions.where(active).ffill()
+    age = positions - last_true_positions
+    return age.fillna(len(active) + 1).astype(int)
 
 
 def _build_random_trade_signals(
@@ -790,6 +831,153 @@ def run_trend_pullback_reclaim_research(
     )
 
 
+def run_ma_crossover_research(
+    candles: pd.DataFrame,
+    filter_candles: pd.DataFrame,
+    config: QuantResearchConfig,
+) -> QuantResearchResult:
+    """Run an MA crossover baseline with higher-timeframe confirmation."""
+    if candles.empty:
+        raise ValueError("No candle data available for MA crossover quant research")
+    required = {"time", "open", "high", "low", "close"}
+    missing = sorted(required - set(candles.columns))
+    if missing:
+        raise ValueError(f"Missing required candle columns: {', '.join(missing)}")
+    if not config.filter_timeframe:
+        raise ValueError("filter_timeframe is required for ma_crossover")
+
+    vbt = _load_vectorbt()
+    df = candles.sort_values("time").reset_index(drop=True).copy()
+    df["time"] = pd.to_datetime(df["time"])
+    close = df["close"].astype(float)
+    open_ = df["open"].astype(float)
+    atr14 = _atr(df, 14)
+    adx14 = _adx(df, 14)
+    merged_filter = _prepare_filter_frame(filter_candles, df["time"])
+
+    ema_fast_windows = config.ema_fast_windows or [20]
+    ema_slow_windows = config.ema_slow_windows or [50]
+    ma_adx_mins = config.ma_adx_mins or [25.0, 30.0]
+    ma_max_cross_age_bars = config.ma_max_cross_age_bars or [3, 6]
+    cooldown_bars = config.cooldown_bars or [8, 12, 20]
+    atr_stop_multipliers = config.atr_stop_multipliers or [1.0, 1.5]
+    rrs = config.rrs or [2.0, 3.0]
+    max_cross_age_cap = max(ma_max_cross_age_bars)
+    freq = _timeframe_to_freq(config.timeframe)
+
+    results: List[Dict[str, Any]] = []
+    for ema_fast_window in ema_fast_windows:
+        ema_fast = close.ewm(span=ema_fast_window, adjust=False).mean()
+        for ema_slow_window in ema_slow_windows:
+            ema_slow = close.ewm(span=ema_slow_window, adjust=False).mean()
+            bullish_cross = (ema_fast > ema_slow) & (ema_fast.shift(1) <= ema_slow.shift(1))
+            bearish_cross = (ema_fast < ema_slow) & (ema_fast.shift(1) >= ema_slow.shift(1))
+            bullish_cross_age = _bars_since_last_true(bullish_cross)
+            bearish_cross_age = _bars_since_last_true(bearish_cross)
+            trend_up = ema_fast > ema_slow
+            trend_down = ema_fast < ema_slow
+
+            filter_bullish = (
+                (merged_filter["filter_close"] > merged_filter["filter_ema20"])
+                & (merged_filter["filter_ema20"] > merged_filter["filter_ema50"])
+                & (merged_filter["filter_adx14"] >= 25)
+            )
+            filter_bearish = (
+                (merged_filter["filter_close"] < merged_filter["filter_ema20"])
+                & (merged_filter["filter_ema20"] < merged_filter["filter_ema50"])
+                & (merged_filter["filter_adx14"] >= 25)
+            )
+
+            for ma_adx_min in ma_adx_mins:
+                base_long_entries = (
+                    trend_up
+                    & filter_bullish
+                    & (bullish_cross_age <= max_cross_age_cap)
+                    & (close > ema_fast)
+                    & (adx14 >= ma_adx_min)
+                    & (close > open_)
+                ).fillna(False)
+                base_short_entries = (
+                    trend_down
+                    & filter_bearish
+                    & (bearish_cross_age <= max_cross_age_cap)
+                    & (close < ema_fast)
+                    & (adx14 >= ma_adx_min)
+                    & (close < open_)
+                ).fillna(False)
+
+                for max_cross_age_bars in ma_max_cross_age_bars:
+                    long_entries = base_long_entries & (bullish_cross_age <= max_cross_age_bars)
+                    short_entries = base_short_entries & (bearish_cross_age <= max_cross_age_bars)
+                    long_exits = ((close < ema_slow) | (ema_fast < ema_slow)).fillna(False)
+                    short_exits = ((close > ema_slow) | (ema_fast > ema_slow)).fillna(False)
+
+                    for cooldown in cooldown_bars:
+                        cooled_long_entries = _apply_cooldown(long_entries, cooldown)
+                        cooled_short_entries = _apply_cooldown(short_entries, cooldown)
+                        for atr_stop_multiplier in atr_stop_multipliers:
+                            sl_stop = ((atr14 * atr_stop_multiplier) / close).clip(lower=0.0001)
+                            for rr in rrs:
+                                tp_stop = sl_stop * rr
+                                portfolio = vbt.Portfolio.from_signals(
+                                    close,
+                                    entries=cooled_long_entries.astype(bool),
+                                    exits=long_exits.astype(bool),
+                                    short_entries=cooled_short_entries.astype(bool),
+                                    short_exits=short_exits.astype(bool),
+                                    init_cash=config.init_cash,
+                                    fees=config.fees,
+                                    slippage=config.slippage,
+                                    sl_stop=sl_stop,
+                                    tp_stop=tp_stop,
+                                    freq=freq,
+                                )
+                                stats = portfolio.stats()
+                                results.append(
+                                    {
+                                        "parameter_json": {
+                                            "ema_fast": int(ema_fast_window),
+                                            "ema_slow": int(ema_slow_window),
+                                            "filter_timeframe": config.filter_timeframe.upper(),
+                                            "ma_adx_min": float(ma_adx_min),
+                                            "max_cross_age_bars": int(max_cross_age_bars),
+                                            "cooldown_bars": int(cooldown),
+                                            "atr_stop_multiplier": float(atr_stop_multiplier),
+                                            "rr": float(rr),
+                                        },
+                                        "total_return_pct": _float_metric(stats, "Total Return [%]"),
+                                        "total_trades": _int_metric(stats, "Total Trades"),
+                                        "win_rate": _float_metric(stats, "Win Rate [%]"),
+                                        "profit_factor": _float_metric(stats, "Profit Factor"),
+                                        "max_drawdown_pct": _float_metric(stats, "Max Drawdown [%]"),
+                                        "sharpe": _float_metric(stats, "Sharpe Ratio"),
+                                        "expectancy": _float_metric(stats, "Expectancy"),
+                                        "min_trades_for_rank": config.min_trades_for_rank,
+                                    }
+                                )
+
+    ranked = sorted(results, key=_rank_key, reverse=True)
+    for index, item in enumerate(ranked, start=1):
+        item.pop("min_trades_for_rank", None)
+        item["rank"] = index
+
+    return QuantResearchResult(
+        run={
+            "run_id": _now_run_id(config.symbol),
+            "strategy": config.strategy,
+            "symbol": config.symbol,
+            "timeframe": config.timeframe.upper(),
+            "filter_timeframe": config.filter_timeframe.upper(),
+            "data_from": config.from_date,
+            "data_to": config.to_date,
+            "init_cash": config.init_cash,
+            "fees": config.fees,
+            "slippage": config.slippage,
+        },
+        results=ranked,
+    )
+
+
 def run_breakout_research(
     candles: pd.DataFrame,
     filter_candles: pd.DataFrame | None,
@@ -945,19 +1133,19 @@ def run_breakout_research(
 def _prepare_filter_frame(filter_candles: pd.DataFrame, base_times: pd.Series) -> pd.DataFrame:
     if filter_candles.empty:
         raise ValueError("No filter timeframe candles available for MTF quant research")
-    required = {"time", "close"}
+    required = {"time", "open", "high", "low", "close"}
     missing = sorted(required - set(filter_candles.columns))
     if missing:
         raise ValueError(f"Missing required filter candle columns: {', '.join(missing)}")
 
     prepared = filter_candles.sort_values("time").reset_index(drop=True).copy()
     prepared["time"] = pd.to_datetime(prepared["time"])
-    prepared["filter_ema20"] = prepared["close"].astype(float).ewm(span=20, adjust=False).mean()
-    prepared["filter_ema50"] = prepared["close"].astype(float).ewm(span=50, adjust=False).mean()
-    prepared["filter_rsi14"] = _rsi(prepared["close"].astype(float), 14)
-    prepared = prepared[["time", "close", "filter_ema20", "filter_ema50", "filter_rsi14"]].rename(
-        columns={"close": "filter_close"}
-    )
+    prepared["filter_close"] = prepared["close"].astype(float)
+    prepared["filter_ema20"] = prepared["filter_close"].ewm(span=20, adjust=False).mean()
+    prepared["filter_ema50"] = prepared["filter_close"].ewm(span=50, adjust=False).mean()
+    prepared["filter_rsi14"] = _rsi(prepared["filter_close"], 14)
+    prepared["filter_adx14"] = _adx(prepared[["high", "low", "close"]], 14)
+    prepared = prepared[["time", "filter_close", "filter_ema20", "filter_ema50", "filter_rsi14", "filter_adx14"]]
 
     base = pd.DataFrame({"time": pd.to_datetime(base_times)})
     return pd.merge_asof(base.sort_values("time"), prepared, on="time", direction="backward")

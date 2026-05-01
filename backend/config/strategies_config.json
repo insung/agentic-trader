@@ -16,12 +16,15 @@
     {
       "name": "Moving Average Crossover",
       "file": "ma_crossover.md",
-      "allowed_regimes": [],
+      "allowed_regimes": [
+        "Bullish",
+        "Bearish"
+      ],
       "required_timeframes": [
         "M15",
         "M30"
       ],
-      "description": "Temporarily disabled for Bollinger-only backtest isolation."
+      "description": "Trend-following crossover with M30 confirmation and ADX-based validation."
     }
   ]
 }

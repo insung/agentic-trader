@@ -4,6 +4,7 @@ status: draft
 strategy_type: trend_following | mean_reversion | breakout | pullback
 registered_in: backend/config/strategies_config.json
 validator: backend/features/trading/strategy_validators.py
+minimum_risk_reward: 2.0
 required_timeframes:
   - M15
   - M30
@@ -51,6 +52,7 @@ indicators:
 
 - **손절가 (SL):** 어디에 두는지, ATR 최소 거리와 충돌하지 않는지 씁니다.
 - **익절가 (TP):** 최소 손익비 또는 목표 지표를 씁니다.
+- **실행 계약:** 현재 런타임은 단일 TP만 지원하므로, 필요하면 `minimum_risk_reward`와 `exit_profile`을 함께 정의합니다.
 - **무효화:** 진입 후 어떤 조건이 깨지면 전략 가설이 틀렸다고 보는지 씁니다.
 
 ## 4. Deterministic Gate

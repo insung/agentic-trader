@@ -24,6 +24,7 @@
         "M15",
         "M30"
       ],
+      "minimum_risk_reward": 2.0,
       "description": "Trend-following crossover with M30 confirmation and ADX-based validation."
     }
   ]

@@ -37,6 +37,8 @@ class FinalOrder(BaseModel):
     action: str = Field(description="BUY | SELL | HOLD")
     sl: float = Field(description="Stop Loss price")
     tp: float = Field(description="Take Profit price")
+    target_rr: float = Field(2.0, description="Risk/reward multiple used to derive TP for execution")
+    exit_plan: str = Field("primary_target", description="Execution exit profile, e.g. primary_target | runner | full_exit")
     final_reasoning: str = Field(description="Logical reasoning for final approval or rejection")
 
 class ReviewLog(BaseModel):
@@ -100,6 +102,46 @@ def _read_strategies(market_regime: str = "Ranging", current_timeframes: List[st
         strategies_text = "No matching strategies found for current market regime."
         
     return strategies_text
+
+def _normalize_strategy_key(value: str) -> str:
+    return "".join(ch for ch in value.lower() if ch.isalnum())
+
+def _load_strategy_contract(strategy_name: str) -> Dict[str, Any]:
+    """Load registry metadata for a strategy by display name or file slug."""
+    if not strategy_name:
+        return {}
+
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    config_path = os.path.join(base_dir, "backend", "config", "strategies_config.json")
+    target = _normalize_strategy_key(strategy_name)
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        for strat in config.get("strategies", []):
+            candidates = [strat.get("name", ""), strat.get("file", "")]
+            for candidate in candidates:
+                if not candidate:
+                    continue
+                normalized = _normalize_strategy_key(candidate)
+                if normalized == target or normalized.startswith(target) or target.startswith(normalized):
+                    return strat
+    except Exception as exc:
+        print(f"⚠️ Failed to load strategy contract for {strategy_name}: {exc}")
+    return {}
+
+def _project_tp_from_rr(action: str, entry_price: float, sl_price: float, target_rr: float) -> float:
+    if entry_price <= 0 or sl_price <= 0 or target_rr <= 0:
+        return 0.0
+    risk = abs(entry_price - sl_price)
+    if risk <= 0:
+        return 0.0
+    action = action.upper()
+    if action == "BUY":
+        return entry_price + (risk * target_rr)
+    if action == "SELL":
+        return entry_price - (risk * target_rr)
+    return 0.0
 
 
 def _persist_runtime_candles(symbol: str, timeframe: str, df) -> None:
@@ -215,8 +257,12 @@ def chief_trader_node(state: AgentState) -> Dict[str, Any]:
     
     # 전략 가설 + 계좌 정보를 함께 전달
     account_info = getattr(state, 'account_info', {})
+    strategy_hypothesis = getattr(state, 'strategy_hypothesis', {}) or {}
+    selected_strategy = str(strategy_hypothesis.get("selected_strategy", ""))
+    strategy_contract = _load_strategy_contract(selected_strategy)
     human_content = f"Here is the Strategy Hypothesis:\n{getattr(state, 'strategy_hypothesis', {})}\n\n"
     human_content += f"Deterministic Indicator Data:\n{json.dumps(getattr(state, 'indicator_data', {}), ensure_ascii=False)}\n\n"
+    human_content += f"Strategy Contract:\n{json.dumps(strategy_contract, ensure_ascii=False)}\n\n"
     human_content += f"Account Info: {json.dumps(account_info)}"
     messages = [SystemMessage(content=system_prompt), HumanMessage(content=human_content)]
     
@@ -227,13 +273,27 @@ def chief_trader_node(state: AgentState) -> Dict[str, Any]:
         symbol = getattr(state, "symbol", "EURUSD")
         current_price = get_current_price(symbol)
         entry_price = current_price.get("ask", 0.0) if response.action.upper() == "BUY" else current_price.get("bid", 0.0)
+        try:
+            min_rr = float(strategy_contract.get("minimum_risk_reward", 2.0) or 2.0)
+        except (TypeError, ValueError):
+            min_rr = 2.0
+        try:
+            target_rr = float(getattr(response, "target_rr", None) or min_rr)
+        except (TypeError, ValueError):
+            target_rr = min_rr
+        target_rr = max(target_rr, min_rr, 2.0)
+        tp_price = _project_tp_from_rr(response.action, entry_price, response.sl, target_rr)
+        if tp_price <= 0:
+            tp_price = response.tp
         
         final_order_dict = {
             "action": response.action,
             "symbol": symbol,
             "entry_price": entry_price,
             "sl_price": response.sl,
-            "tp_price": response.tp,
+            "tp_price": tp_price,
+            "target_rr": target_rr,
+            "exit_plan": getattr(response, "exit_plan", "primary_target"),
             "lot_size": 0.0,
             "reasoning": response.final_reasoning
         }

@@ -4,6 +4,7 @@ status: runtime
 strategy_type: trend_following
 registered_in: backend/config/strategies_config.json
 validator: backend/features/trading/strategy_validators.py
+minimum_risk_reward: 2.0
 required_timeframes:
   - M15
   - M30
@@ -65,9 +66,8 @@ indicators:
 
 ## 3. 청산 조건 (Exit Rules)
 - **손절가 (SL):** 진입 시점의 EMA 50 가격. EMA 50을 이탈하면 추세가 꺾인 것으로 판단합니다.
-- **1차 익절가 (TP1):** 진입가 기준 SL 거리의 2배 (1:2 R/R). 비중의 50% 청산.
-- **2차 익절가 (TP2):** 진입가 기준 SL 거리의 3배 (1:3 R/R). 잔여 비중 전량 청산.
-- **트레일링 스탑:** 1차 익절 달성 후, 나머지 비중의 SL을 진입가(손익분기점)로 이동합니다.
+- **실행용 최소 TP:** 현재 런타임은 단일 TP만 지원하므로, Chief Trader와 guardrail은 최소 1:2 R/R을 만족하는 실행용 TP를 사용합니다.
+- **연구용 확장 TP:** 전략 연구에서는 1:3 R/R runner와 트레일링 스탑을 함께 검토할 수 있습니다. 이 runner는 paper/live 런타임에서 아직 자동 분할 청산으로 구현되지 않았습니다.
 
 ## 4. Deterministic Gate
 

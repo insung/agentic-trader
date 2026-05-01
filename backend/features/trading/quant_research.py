@@ -249,6 +249,124 @@ def run_bollinger_research(candles: pd.DataFrame, config: QuantResearchConfig) -
     )
 
 
+def run_buy_hold_research(candles: pd.DataFrame, config: QuantResearchConfig) -> QuantResearchResult:
+    """Run a simple buy-and-hold benchmark."""
+    if candles.empty:
+        raise ValueError("No candle data available for buy and hold benchmark")
+    required = {"time", "open", "high", "low", "close"}
+    missing = sorted(required - set(candles.columns))
+    if missing:
+        raise ValueError(f"Missing required candle columns: {', '.join(missing)}")
+
+    vbt = _load_vectorbt()
+    df = candles.sort_values("time").reset_index(drop=True).copy()
+    close = df["close"].astype(float)
+    freq = _timeframe_to_freq(config.timeframe)
+    entries = pd.Series(False, index=close.index, dtype=bool)
+    exits = pd.Series(False, index=close.index, dtype=bool)
+    if not close.empty:
+        entries.iloc[0] = True
+        exits.iloc[-1] = True
+
+    portfolio = vbt.Portfolio.from_signals(
+        close,
+        entries=entries,
+        exits=exits,
+        init_cash=config.init_cash,
+        fees=config.fees,
+        slippage=config.slippage,
+        freq=freq,
+    )
+    stats = portfolio.stats()
+    result = {
+        "parameter_json": {
+            "benchmark": "buy_hold",
+        },
+        "total_return_pct": _float_metric(stats, "Total Return [%]"),
+        "total_trades": _int_metric(stats, "Total Trades"),
+        "win_rate": _float_metric(stats, "Win Rate [%]"),
+        "profit_factor": _float_metric(stats, "Profit Factor"),
+        "max_drawdown_pct": _float_metric(stats, "Max Drawdown [%]"),
+        "sharpe": _float_metric(stats, "Sharpe Ratio"),
+        "expectancy": _float_metric(stats, "Expectancy"),
+        "min_trades_for_rank": 0,
+    }
+    result["rank"] = 1
+
+    return QuantResearchResult(
+        run={
+            "run_id": _now_run_id(config.symbol),
+            "strategy": "buy_hold",
+            "symbol": config.symbol,
+            "timeframe": config.timeframe.upper(),
+            "data_from": config.from_date,
+            "data_to": config.to_date,
+            "init_cash": config.init_cash,
+            "fees": config.fees,
+            "slippage": config.slippage,
+        },
+        results=[result],
+    )
+
+
+def run_no_trade_research(candles: pd.DataFrame, config: QuantResearchConfig) -> QuantResearchResult:
+    """Run a no-trade benchmark."""
+    if candles.empty:
+        raise ValueError("No candle data available for no-trade benchmark")
+    required = {"time", "open", "high", "low", "close"}
+    missing = sorted(required - set(candles.columns))
+    if missing:
+        raise ValueError(f"Missing required candle columns: {', '.join(missing)}")
+
+    vbt = _load_vectorbt()
+    df = candles.sort_values("time").reset_index(drop=True).copy()
+    close = df["close"].astype(float)
+    freq = _timeframe_to_freq(config.timeframe)
+    empty_signals = pd.Series(False, index=close.index, dtype=bool)
+
+    portfolio = vbt.Portfolio.from_signals(
+        close,
+        entries=empty_signals,
+        exits=empty_signals,
+        short_entries=empty_signals,
+        short_exits=empty_signals,
+        init_cash=config.init_cash,
+        fees=config.fees,
+        slippage=config.slippage,
+        freq=freq,
+    )
+    stats = portfolio.stats()
+    result = {
+        "parameter_json": {
+            "benchmark": "no_trade",
+        },
+        "total_return_pct": _float_metric(stats, "Total Return [%]"),
+        "total_trades": _int_metric(stats, "Total Trades"),
+        "win_rate": _float_metric(stats, "Win Rate [%]"),
+        "profit_factor": _float_metric(stats, "Profit Factor"),
+        "max_drawdown_pct": _float_metric(stats, "Max Drawdown [%]"),
+        "sharpe": _float_metric(stats, "Sharpe Ratio"),
+        "expectancy": _float_metric(stats, "Expectancy"),
+        "min_trades_for_rank": 0,
+    }
+    result["rank"] = 1
+
+    return QuantResearchResult(
+        run={
+            "run_id": _now_run_id(config.symbol),
+            "strategy": "no_trade",
+            "symbol": config.symbol,
+            "timeframe": config.timeframe.upper(),
+            "data_from": config.from_date,
+            "data_to": config.to_date,
+            "init_cash": config.init_cash,
+            "fees": config.fees,
+            "slippage": config.slippage,
+        },
+        results=[result],
+    )
+
+
 def run_trend_pullback_research(
     candles: pd.DataFrame,
     filter_candles: pd.DataFrame,

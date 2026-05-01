@@ -8,10 +8,12 @@ from backend.features.trading import backtest_store
 from backend.features.trading.quant_research import (
     QuantResearchConfig,
     QuantResearchResult,
+    run_buy_hold_research,
     run_breakout_research,
     run_bollinger_research,
     run_bollinger_mtf_research,
     run_macd_research,
+    run_no_trade_research,
     run_trend_pullback_reclaim_research,
     run_trend_pullback_research,
 )
@@ -88,6 +90,66 @@ def test_run_bollinger_research_uses_vectorbt_and_ranks_results(tmp_path, monkey
     assert result.results[0]["rank"] == 1
     assert result.results[0]["total_trades"] == 24
     assert result.results[0]["parameter_json"]["bb_window"] == 20
+
+
+def test_run_buy_hold_research_uses_vectorbt_and_one_trade(tmp_path, monkeypatch):
+    monkeypatch.setitem(sys.modules, "vectorbt", SimpleNamespace(Portfolio=_FakePortfolio))
+    _FakePortfolio.call_count = 0
+    _FakePortfolio.last_kwargs = {}
+
+    result = run_buy_hold_research(
+        _sample_candles(),
+        QuantResearchConfig(
+            symbol="BTCUSD",
+            timeframe="M15",
+            from_date="2025-01-01",
+            to_date="2025-01-01",
+        ),
+    )
+
+    assert _FakePortfolio.call_count == 1
+    assert result.run["strategy"] == "buy_hold"
+    assert len(result.results) == 1
+    assert result.results[0]["rank"] == 1
+    assert result.results[0]["total_trades"] == 24
+    assert result.results[0]["parameter_json"]["benchmark"] == "buy_hold"
+
+
+def test_run_no_trade_research_uses_vectorbt_and_zero_trades(tmp_path, monkeypatch):
+    class _FakeNoTradePortfolio(_FakePortfolio):
+        def stats(self):
+            return pd.Series(
+                {
+                    "Total Return [%]": 0.0,
+                    "Total Trades": 0,
+                    "Win Rate [%]": 0.0,
+                    "Profit Factor": float("nan"),
+                    "Max Drawdown [%]": 0.0,
+                    "Sharpe Ratio": 0.0,
+                    "Expectancy": 0.0,
+                }
+            )
+
+    monkeypatch.setitem(sys.modules, "vectorbt", SimpleNamespace(Portfolio=_FakeNoTradePortfolio))
+    _FakeNoTradePortfolio.call_count = 0
+    _FakeNoTradePortfolio.last_kwargs = {}
+
+    result = run_no_trade_research(
+        _sample_candles(),
+        QuantResearchConfig(
+            symbol="BTCUSD",
+            timeframe="M15",
+            from_date="2025-01-01",
+            to_date="2025-01-01",
+        ),
+    )
+
+    assert _FakeNoTradePortfolio.call_count == 1
+    assert result.run["strategy"] == "no_trade"
+    assert len(result.results) == 1
+    assert result.results[0]["rank"] == 1
+    assert result.results[0]["total_trades"] == 0
+    assert result.results[0]["parameter_json"]["benchmark"] == "no_trade"
 
 
 def test_run_bollinger_mtf_research_applies_filter_timeframe(tmp_path, monkeypatch):

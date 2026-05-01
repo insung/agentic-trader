@@ -108,8 +108,9 @@ Guardrail executes or blocks
   - 대화에 붙여넣은 결과가 아니라 SQLite `quant_runs`, `quant_results` 기준으로 전략별 rank 1 결과를 비교합니다.
   - 월별 비교가 필요하면 `SUMMARY_MONTHLY=1`로 `data_from` 월별 best run을 확인합니다.
 - [ ] LLM 없이 MA Crossover baseline을 구현합니다.
-- [ ] Buy & Hold benchmark를 추가합니다.
-- [ ] Random/no-trade benchmark를 추가합니다.
+- [x] Buy & Hold benchmark를 추가합니다.
+- [x] No-trade benchmark를 추가합니다.
+- [ ] Random benchmark를 추가합니다.
 - [ ] 각 baseline의 거래 수, 승률, profit factor, MDD, 기대값을 비교합니다.
 
 ### 3. Candidate Setup Generator

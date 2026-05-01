@@ -16,12 +16,14 @@ from backend.features.trading.backtest_store import (
 )
 from backend.features.trading.quant_research import (
     QuantResearchConfig,
+    run_buy_hold_research,
     run_breakout_research,
     run_bollinger_mtf_research,
     run_bollinger_research,
+    run_macd_research,
+    run_no_trade_research,
     run_trend_pullback_reclaim_research,
     run_trend_pullback_research,
-    run_macd_research,
 )
 
 
@@ -44,7 +46,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--strategy",
         default="bollinger",
-        choices=["bollinger", "bollinger_mtf", "trend_pullback", "trend_pullback_reclaim", "breakout", "macd"],
+        choices=["bollinger", "bollinger_mtf", "trend_pullback", "trend_pullback_reclaim", "breakout", "macd", "buy_hold", "no_trade"],
     )
     parser.add_argument("--init-cash", type=float, default=10000.0)
     parser.add_argument("--fees", type=float, default=0.0)
@@ -154,6 +156,10 @@ def main() -> None:
                 f"from {args.from_date} to {args.to_date}. Run `make backtest-fetch` first."
             )
         result = run_breakout_research(candles, filter_candles, config)
+    elif args.strategy == "buy_hold":
+        result = run_buy_hold_research(candles, config)
+    elif args.strategy == "no_trade":
+        result = run_no_trade_research(candles, config)
     else:
         if args.strategy == "breakout":
             result = run_breakout_research(candles, None, config)

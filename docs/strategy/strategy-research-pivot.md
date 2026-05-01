@@ -110,7 +110,7 @@ Guardrail executes or blocks
 - [ ] LLM 없이 MA Crossover baseline을 구현합니다.
 - [x] Buy & Hold benchmark를 추가합니다.
 - [x] No-trade benchmark를 추가합니다.
-- [ ] Random benchmark를 추가합니다.
+- [x] Random benchmark를 추가합니다.
 - [ ] 각 baseline의 거래 수, 승률, profit factor, MDD, 기대값을 비교합니다.
 
 ### 3. Candidate Setup Generator
@@ -134,6 +134,8 @@ Guardrail executes or blocks
   - 허용 범위: 연구용 quant baseline은 추가할 수 있습니다. breakout baseline처럼 DB에 기록되는 실험용 전략은 허용됩니다.
 - [ ] LLM 프롬프트만 더 공격적으로 바꾸는 것은 보류합니다.
   - 이유: 통과 가능한 후보 자체가 적으면 프롬프트 변경은 검증 불가능한 주문을 늘릴 가능성이 큽니다.
+- [ ] 여러 baseline을 단순 합산해서 섞는 것은 보류합니다.
+  - 이유: 각 baseline의 edge와 failure mode를 먼저 분리해야 합니다.
 - [ ] live/paper 장기 운영은 보류합니다.
   - 이유: 현재 구조는 실제 운영에서도 긴 무포지션 구간이 발생할 가능성이 큽니다.
 

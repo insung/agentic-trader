@@ -137,6 +137,11 @@ BREAKOUT_RSI_UPPERS ?= 45,50
 MACD_FAST_WINDOWS ?= 12
 MACD_SLOW_WINDOWS ?= 26
 MACD_SIGNAL_WINDOWS ?= 9
+RANDOM_SEED ?= 42
+RANDOM_ENTRY_PROB ?= 0.01
+RANDOM_LONG_BIAS ?= 0.5
+RANDOM_MIN_HOLD_BARS ?= 3
+RANDOM_MAX_HOLD_BARS ?= 12
 TOP ?= 10
 SUMMARY_LIMIT ?= 50
 SUMMARY_STRATEGY ?=
@@ -183,6 +188,11 @@ quant-run: venv
 		--macd-fast-windows "$(MACD_FAST_WINDOWS)" \
 		--macd-slow-windows "$(MACD_SLOW_WINDOWS)" \
 		--macd-signal-windows "$(MACD_SIGNAL_WINDOWS)" \
+		--random-seed $(RANDOM_SEED) \
+		--random-entry-prob $(RANDOM_ENTRY_PROB) \
+		--random-long-bias $(RANDOM_LONG_BIAS) \
+		--random-min-hold-bars $(RANDOM_MIN_HOLD_BARS) \
+		--random-max-hold-bars $(RANDOM_MAX_HOLD_BARS) \
 		--top $(TOP)
 
 quant-summary: venv

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
+import numpy as np
 import pandas as pd
 
 
@@ -48,6 +49,11 @@ class QuantResearchConfig:
     macd_fast_windows: List[int] | None = None
     macd_slow_windows: List[int] | None = None
     macd_signal_windows: List[int] | None = None
+    random_seed: int | None = 42
+    random_entry_prob: float | None = 0.01
+    random_long_bias: float | None = 0.5
+    random_min_hold_bars: int | None = 3
+    random_max_hold_bars: int | None = 12
     min_trades_for_rank: int = 20
 
 
@@ -153,6 +159,61 @@ def _apply_cooldown(signals: pd.Series, bars: int) -> pd.Series:
         if allow:
             last_signal_index = index
     return pd.Series(cooled, index=signals.index, dtype=bool)
+
+
+def _build_random_trade_signals(
+    length: int,
+    seed: int,
+    entry_prob: float,
+    long_bias: float,
+    min_hold_bars: int,
+    max_hold_bars: int,
+) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+    rng = np.random.default_rng(seed)
+    entries = pd.Series(False, index=range(length), dtype=bool)
+    exits = pd.Series(False, index=range(length), dtype=bool)
+    short_entries = pd.Series(False, index=range(length), dtype=bool)
+    short_exits = pd.Series(False, index=range(length), dtype=bool)
+
+    hold_min = max(1, int(min_hold_bars))
+    hold_max = max(hold_min, int(max_hold_bars))
+    flat_until = -1
+    current_position: str | None = None
+    exit_index = -1
+
+    for index in range(length):
+        if current_position is not None and index >= exit_index:
+            if current_position == "long":
+                exits.iloc[index] = True
+            else:
+                short_exits.iloc[index] = True
+            current_position = None
+            flat_until = index
+
+        if current_position is not None:
+            continue
+        if index <= flat_until:
+            continue
+        if rng.random() >= entry_prob:
+            continue
+
+        if rng.random() < long_bias:
+            entries.iloc[index] = True
+            current_position = "long"
+        else:
+            short_entries.iloc[index] = True
+            current_position = "short"
+
+        hold_bars = int(rng.integers(hold_min, hold_max + 1))
+        exit_index = min(index + hold_bars, length - 1)
+
+    if current_position is not None and exit_index >= 0:
+        if current_position == "long":
+            exits.iloc[exit_index] = True
+        else:
+            short_exits.iloc[exit_index] = True
+
+    return entries, exits, short_entries, short_exits
 
 
 def run_bollinger_research(candles: pd.DataFrame, config: QuantResearchConfig) -> QuantResearchResult:
@@ -355,6 +416,83 @@ def run_no_trade_research(candles: pd.DataFrame, config: QuantResearchConfig) ->
         run={
             "run_id": _now_run_id(config.symbol),
             "strategy": "no_trade",
+            "symbol": config.symbol,
+            "timeframe": config.timeframe.upper(),
+            "data_from": config.from_date,
+            "data_to": config.to_date,
+            "init_cash": config.init_cash,
+            "fees": config.fees,
+            "slippage": config.slippage,
+        },
+        results=[result],
+    )
+
+
+def run_random_research(candles: pd.DataFrame, config: QuantResearchConfig) -> QuantResearchResult:
+    """Run a deterministic random trading benchmark."""
+    if candles.empty:
+        raise ValueError("No candle data available for random benchmark")
+    required = {"time", "open", "high", "low", "close"}
+    missing = sorted(required - set(candles.columns))
+    if missing:
+        raise ValueError(f"Missing required candle columns: {', '.join(missing)}")
+
+    vbt = _load_vectorbt()
+    df = candles.sort_values("time").reset_index(drop=True).copy()
+    close = df["close"].astype(float)
+    freq = _timeframe_to_freq(config.timeframe)
+
+    seed = config.random_seed if config.random_seed is not None else 42
+    entry_prob = config.random_entry_prob if config.random_entry_prob is not None else 0.01
+    long_bias = config.random_long_bias if config.random_long_bias is not None else 0.5
+    min_hold_bars = config.random_min_hold_bars if config.random_min_hold_bars is not None else 3
+    max_hold_bars = config.random_max_hold_bars if config.random_max_hold_bars is not None else 12
+
+    entries, exits, short_entries, short_exits = _build_random_trade_signals(
+        len(close),
+        int(seed),
+        float(entry_prob),
+        float(long_bias),
+        int(min_hold_bars),
+        int(max_hold_bars),
+    )
+
+    portfolio = vbt.Portfolio.from_signals(
+        close,
+        entries=entries,
+        exits=exits,
+        short_entries=short_entries,
+        short_exits=short_exits,
+        init_cash=config.init_cash,
+        fees=config.fees,
+        slippage=config.slippage,
+        freq=freq,
+    )
+    stats = portfolio.stats()
+    result = {
+        "parameter_json": {
+            "benchmark": "random",
+            "seed": int(seed),
+            "entry_prob": float(entry_prob),
+            "long_bias": float(long_bias),
+            "min_hold_bars": int(min_hold_bars),
+            "max_hold_bars": int(max_hold_bars),
+        },
+        "total_return_pct": _float_metric(stats, "Total Return [%]"),
+        "total_trades": _int_metric(stats, "Total Trades"),
+        "win_rate": _float_metric(stats, "Win Rate [%]"),
+        "profit_factor": _float_metric(stats, "Profit Factor"),
+        "max_drawdown_pct": _float_metric(stats, "Max Drawdown [%]"),
+        "sharpe": _float_metric(stats, "Sharpe Ratio"),
+        "expectancy": _float_metric(stats, "Expectancy"),
+        "min_trades_for_rank": 0,
+    }
+    result["rank"] = 1
+
+    return QuantResearchResult(
+        run={
+            "run_id": _now_run_id(config.symbol),
+            "strategy": "random",
             "symbol": config.symbol,
             "timeframe": config.timeframe.upper(),
             "data_from": config.from_date,
@@ -970,6 +1108,7 @@ def run_macd_research(
     macd_fast_windows = config.macd_fast_windows or [12]
     macd_slow_windows = config.macd_slow_windows or [26]
     macd_signal_windows = config.macd_signal_windows or [9]
+    ema_trend_windows = config.ema_slow_windows or [0]
     atr_stop_multipliers = config.atr_stop_multipliers or [1.5, 2.0]
     rrs = config.rrs or [1.3, 1.5, 2.0]
     cooldown_bars = config.cooldown_bars or [0]
@@ -992,44 +1131,54 @@ def run_macd_research(
                 hist_cross_up = (macd_hist > 0) & (macd_hist.shift(1) <= 0)
                 hist_cross_down = (macd_hist < 0) & (macd_hist.shift(1) >= 0)
 
-                base_long_entries = hist_cross_up & (macd_line < 0)
-                base_short_entries = hist_cross_down & (macd_line > 0)
+                for trend_window in ema_trend_windows:
+                    if trend_window > 0:
+                        ema_trend = close.ewm(span=trend_window, adjust=False).mean()
+                        trend_up = close > ema_trend
+                        trend_down = close < ema_trend
+                    else:
+                        trend_up = pd.Series(True, index=close.index)
+                        trend_down = pd.Series(True, index=close.index)
 
-                long_exits = hist_cross_down.fillna(False)
-                short_exits = hist_cross_up.fillna(False)
+                    base_long_entries = hist_cross_up & (macd_line < 0) & trend_up
+                    base_short_entries = hist_cross_down & (macd_line > 0) & trend_down
 
-                for cooldown in cooldown_bars:
-                    long_entries = _apply_cooldown(base_long_entries, cooldown)
-                    short_entries = _apply_cooldown(base_short_entries, cooldown)
+                    long_exits = hist_cross_down.fillna(False)
+                    short_exits = hist_cross_up.fillna(False)
 
-                    for atr_stop_multiplier in atr_stop_multipliers:
-                        sl_stop = ((atr14 * atr_stop_multiplier) / close).clip(lower=0.0001)
-                        for rr in rrs:
-                            tp_stop = sl_stop * rr
-                            portfolio = vbt.Portfolio.from_signals(
-                                close,
-                                entries=long_entries.astype(bool),
-                                exits=long_exits.astype(bool),
-                                short_entries=short_entries.astype(bool),
-                                short_exits=short_exits.astype(bool),
-                                init_cash=config.init_cash,
-                                fees=config.fees,
-                                slippage=config.slippage,
-                                sl_stop=sl_stop,
-                                tp_stop=tp_stop,
-                                freq=freq,
-                            )
-                            stats = portfolio.stats()
-                            results.append(
-                                {
-                                    "parameter_json": {
-                                        "macd_fast": int(fast_window),
-                                        "macd_slow": int(slow_window),
-                                        "macd_signal": int(signal_window),
-                                        "cooldown_bars": int(cooldown),
-                                        "atr_stop_multiplier": float(atr_stop_multiplier),
-                                        "rr": float(rr),
-                                    },
+                    for cooldown in cooldown_bars:
+                        long_entries = _apply_cooldown(base_long_entries, cooldown)
+                        short_entries = _apply_cooldown(base_short_entries, cooldown)
+
+                        for atr_stop_multiplier in atr_stop_multipliers:
+                            sl_stop = ((atr14 * atr_stop_multiplier) / close).clip(lower=0.0001)
+                            for rr in rrs:
+                                tp_stop = sl_stop * rr
+                                portfolio = vbt.Portfolio.from_signals(
+                                    close,
+                                    entries=long_entries.astype(bool),
+                                    exits=long_exits.astype(bool),
+                                    short_entries=short_entries.astype(bool),
+                                    short_exits=short_exits.astype(bool),
+                                    init_cash=config.init_cash,
+                                    fees=config.fees,
+                                    slippage=config.slippage,
+                                    sl_stop=sl_stop,
+                                    tp_stop=tp_stop,
+                                    freq=freq,
+                                )
+                                stats = portfolio.stats()
+                                results.append(
+                                    {
+                                        "parameter_json": {
+                                            "macd_fast": int(fast_window),
+                                            "macd_slow": int(slow_window),
+                                            "macd_signal": int(signal_window),
+                                            "ema_trend": int(trend_window),
+                                            "cooldown_bars": int(cooldown),
+                                            "atr_stop_multiplier": float(atr_stop_multiplier),
+                                            "rr": float(rr),
+                                        },
                                     "total_return_pct": _float_metric(stats, "Total Return [%]"),
                                     "total_trades": _int_metric(stats, "Total Trades"),
                                     "win_rate": _float_metric(stats, "Win Rate [%]"),

@@ -12,6 +12,7 @@
 - `ma_crossover`는 현재 가장 강한 승격 후보입니다.
 - `macd`는 6개월 기준 PF가 1 미만이라 실패 baseline입니다.
 - Buy & Hold와 No-trade benchmark는 비교 기준으로 추가되었습니다.
+- Random benchmark는 비교 기준으로 추가되었습니다.
 
 즉, 현재까지의 deterministic baseline 중에서는 **MA Crossover만 승격 후보로 남기고, 나머지는 보류 또는 실패 baseline**으로 보는 것이 맞습니다.
 
@@ -34,9 +35,10 @@ MACD는 연구용 baseline으로는 남겨둘 수 있지만, 현재 결과만으
 - 수익률이 음수
 - 거래 수가 많지만 edge가 약함
 
-### 3. Random benchmark 추가
+### 3. Random benchmark는 비교 기준으로 고정
 
 전략이 실제로 의미가 있는지 보려면 랜덤 baseline이 필요합니다.
+이 baseline은 승격 후보가 아니라 해석 기준입니다.
 
 ### 4. 월별 walk-forward 검증 강화
 
@@ -52,7 +54,8 @@ MACD는 연구용 baseline으로는 남겨둘 수 있지만, 현재 결과만으
 2. `make quant-summary SUMMARY_MONTHLY=1`로 월별 결과를 봅니다.
 3. 1~6개월 구간에서 같은 파라미터가 유지되는지 확인합니다.
 4. MACD는 추가 실험보다 보류 대상으로 둡니다.
-5. Random benchmark를 추가합니다.
+5. Random benchmark를 고정 비교 기준으로 유지합니다.
+6. No-Trade Audit을 추가합니다.
 
 ## 현재 보류할 것
 
@@ -63,6 +66,7 @@ MACD는 연구용 baseline으로는 남겨둘 수 있지만, 현재 결과만으
 - MACD를 더 미세하게 튜닝해서 승격시키는 것
 - 여러 전략을 단순 합산해서 섞는 것
 - Buy & Hold / No-trade benchmark를 더 확장 없이 전략으로 오해하는 것
+- Random benchmark를 승격 후보로 오해하는 것
 
 ## 승격 기준
 

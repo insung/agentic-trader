@@ -13,6 +13,7 @@ from backend.features.trading.quant_research import (
     run_bollinger_research,
     run_bollinger_mtf_research,
     run_macd_research,
+    run_random_research,
     run_no_trade_research,
     run_trend_pullback_reclaim_research,
     run_trend_pullback_research,
@@ -150,6 +151,53 @@ def test_run_no_trade_research_uses_vectorbt_and_zero_trades(tmp_path, monkeypat
     assert result.results[0]["rank"] == 1
     assert result.results[0]["total_trades"] == 0
     assert result.results[0]["parameter_json"]["benchmark"] == "no_trade"
+
+
+def test_run_random_research_is_deterministic_with_seed(tmp_path, monkeypatch):
+    class _CapturePortfolio(_FakePortfolio):
+        captured_kwargs = []
+
+        @classmethod
+        def from_signals(cls, *args, **kwargs):
+            cls.captured_kwargs.append(
+                {
+                    key: value.copy() if hasattr(value, "copy") else value
+                    for key, value in kwargs.items()
+                }
+            )
+            return super().from_signals(*args, **kwargs)
+
+    monkeypatch.setitem(sys.modules, "vectorbt", SimpleNamespace(Portfolio=_CapturePortfolio))
+    _CapturePortfolio.call_count = 0
+    _CapturePortfolio.last_kwargs = {}
+    _CapturePortfolio.captured_kwargs = []
+
+    config = QuantResearchConfig(
+        symbol="BTCUSD",
+        timeframe="M15",
+        from_date="2025-01-01",
+        to_date="2025-01-01",
+        strategy="random",
+        random_seed=7,
+        random_entry_prob=0.5,
+        random_long_bias=0.6,
+        random_min_hold_bars=1,
+        random_max_hold_bars=3,
+    )
+
+    first = run_random_research(_sample_candles(), config)
+    second = run_random_research(_sample_candles(), config)
+
+    assert _CapturePortfolio.call_count == 2
+    assert first.run["strategy"] == "random"
+    assert first.results[0]["parameter_json"]["seed"] == 7
+    assert first.results[0]["parameter_json"]["benchmark"] == "random"
+    assert first.results[0]["rank"] == 1
+    assert _CapturePortfolio.captured_kwargs[0]["entries"].equals(_CapturePortfolio.captured_kwargs[1]["entries"])
+    assert _CapturePortfolio.captured_kwargs[0]["exits"].equals(_CapturePortfolio.captured_kwargs[1]["exits"])
+    assert _CapturePortfolio.captured_kwargs[0]["short_entries"].equals(_CapturePortfolio.captured_kwargs[1]["short_entries"])
+    assert _CapturePortfolio.captured_kwargs[0]["short_exits"].equals(_CapturePortfolio.captured_kwargs[1]["short_exits"])
+    assert first.results[0]["total_trades"] == second.results[0]["total_trades"]
 
 
 def test_run_bollinger_mtf_research_applies_filter_timeframe(tmp_path, monkeypatch):

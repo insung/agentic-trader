@@ -21,6 +21,7 @@ from backend.features.trading.quant_research import (
     run_bollinger_mtf_research,
     run_bollinger_research,
     run_macd_research,
+    run_random_research,
     run_no_trade_research,
     run_trend_pullback_reclaim_research,
     run_trend_pullback_research,
@@ -46,7 +47,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--strategy",
         default="bollinger",
-        choices=["bollinger", "bollinger_mtf", "trend_pullback", "trend_pullback_reclaim", "breakout", "macd", "buy_hold", "no_trade"],
+        choices=[
+            "bollinger",
+            "bollinger_mtf",
+            "trend_pullback",
+            "trend_pullback_reclaim",
+            "breakout",
+            "macd",
+            "buy_hold",
+            "no_trade",
+            "random",
+        ],
     )
     parser.add_argument("--init-cash", type=float, default=10000.0)
     parser.add_argument("--fees", type=float, default=0.0)
@@ -74,6 +85,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--macd-fast-windows", default="12")
     parser.add_argument("--macd-slow-windows", default="26")
     parser.add_argument("--macd-signal-windows", default="9")
+    parser.add_argument("--random-seed", type=int, default=42)
+    parser.add_argument("--random-entry-prob", type=float, default=0.01)
+    parser.add_argument("--random-long-bias", type=float, default=0.5)
+    parser.add_argument("--random-min-hold-bars", type=int, default=3)
+    parser.add_argument("--random-max-hold-bars", type=int, default=12)
     parser.add_argument("--top", type=int, default=10)
     return parser.parse_args()
 
@@ -120,6 +136,11 @@ def main() -> None:
         macd_fast_windows=_parse_ints(args.macd_fast_windows),
         macd_slow_windows=_parse_ints(args.macd_slow_windows),
         macd_signal_windows=_parse_ints(args.macd_signal_windows),
+        random_seed=args.random_seed,
+        random_entry_prob=args.random_entry_prob,
+        random_long_bias=args.random_long_bias,
+        random_min_hold_bars=args.random_min_hold_bars,
+        random_max_hold_bars=args.random_max_hold_bars,
     )
     if args.strategy in {"bollinger_mtf", "trend_pullback", "trend_pullback_reclaim"}:
         if not args.filter_timeframe:
@@ -160,6 +181,8 @@ def main() -> None:
         result = run_buy_hold_research(candles, config)
     elif args.strategy == "no_trade":
         result = run_no_trade_research(candles, config)
+    elif args.strategy == "random":
+        result = run_random_research(candles, config)
     else:
         if args.strategy == "breakout":
             result = run_breakout_research(candles, None, config)

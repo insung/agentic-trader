@@ -50,6 +50,30 @@ make cli
 
 CLI는 심볼, 타임프레임, paper/live 모드를 선택하고 `/api/v1/trade/trigger`로 요청을 보냅니다. 전략은 CLI에서 직접 고르지 않고, Tech Analyst가 판정한 market regime과 `backend/config/strategies_config.json`에 따라 자동 주입됩니다.
 
+## Cron으로 주기 실행하기
+
+현재 `trigger`는 1회 실행용입니다. 자동 매매 주기는 백엔드가 아니라 외부 스케줄러가 정합니다. 가장 단순한 방법은 `cron`으로 `make trigger`를 반복 호출하는 것입니다.
+
+### 예시: 15분마다 paper 트리거
+
+```cron
+*/15 * * * * cd /home/insung/Github/agentic-trader && make trigger SYMBOL=BTCUSD TIMEFRAMES=M15,M30 MODE=paper >> /home/insung/Github/agentic-trader/trading_logs/cron-paper.log 2>&1
+```
+
+### 예시: 15분마다 live 트리거
+
+```cron
+*/15 * * * * cd /home/insung/Github/agentic-trader && make trigger SYMBOL=BTCUSD TIMEFRAMES=M15,M30 MODE=live >> /home/insung/Github/agentic-trader/trading_logs/cron-live.log 2>&1
+```
+
+### 운영 규칙
+
+- `M15` 전략이면 15분 간격으로, `M30` 전략이면 30분 간격으로 호출합니다.
+- `cron`이 이전 호출을 끝내기 전에 다음 호출이 시작되지 않도록 실행 시간을 짧게 유지합니다.
+- live 환경에서는 MT5가 켜져 있어야 하고, `make run-wine` 서버가 살아 있어야 합니다.
+- 동일 심볼에 열린 포지션이 있으면 중복 진입 차단 정책을 먼저 점검합니다.
+- 처음에는 `MODE=paper`로만 cron을 돌려 로그와 타이밍을 확인한 뒤, live로 전환합니다.
+
 ## Monitor Runtime
 
 서버 로그에서 다음 흐름을 확인합니다.

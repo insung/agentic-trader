@@ -33,6 +33,26 @@ trading_logs/review_*.md
 trading_logs/trading_logs.sqlite
 ```
 
+## `MODE=live` 전에 확인해야 하는 것
+
+`MODE=live`는 MT5 데모 계좌 또는 실계좌에 실제 주문을 전송하는 단계입니다.
+넘어가기 전에 아래 순서가 먼저 통과되어야 합니다.
+
+1. `MODE=paper` 경로가 끝까지 정상 실행된다.
+2. `make reconcile`로 열린 포지션이 없거나, 청산 후 복기가 정상 생성된다.
+3. Chief Trader가 전략 문서와 registry의 `minimum_risk_reward` 계약을 읽고, guardrail이 허용하는 실행용 TP를 만든다.
+4. strategy validator와 No-Trade Audit이 같은 차단 사유를 설명한다.
+5. 짧은 `MODE=live` 데모 계좌 smoke run을 한 번 수행하고, MT5 체결/로그/포지션 추적이 일치하는지 확인한다.
+
+현재 상태:
+
+- `MODE=paper` 경로는 정상이다.
+- `make reconcile`는 정상이다.
+- Chief Trader와 guardrail의 RR 계약 정렬은 완료됐다.
+- `MODE=live` 데모 계좌 smoke run은 수행했으나, 현재 시장 조건에서는 Chief Trader가 HOLD를 선택해 주문이 나가지 않았다.
+
+따라서 **paper 검증과 계약 정렬은 끝났고, live 트리거/reconcile 경로도 정상 동작했지만, 실제 주문 체결은 아직 한 번도 발생하지 않았다**고 봐야 한다.
+
 ## 컴퓨터를 계속 켜둬야 하는가
 
 자동으로 계속 매매, 감시, 복기를 하려면 다음 프로세스가 계속 켜져 있어야 합니다.

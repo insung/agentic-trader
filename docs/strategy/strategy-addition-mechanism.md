@@ -78,6 +78,26 @@ research baseline이 좋다고 자동으로 실전 전략이 되지 않습니다
 
 validator는 “좋아 보인다”가 아니라 “실제로 수치가 맞는가”만 판단해야 합니다.
 
+### 3-1. Chief Trader 계약을 전략 문서와 맞춥니다
+
+전략이 paper/live 승격 후보가 되면 Chief Trader는 문서를 직접 해석하는 대신, 전략 registry와 문서에 적힌 **실행 계약**을 읽어야 합니다.
+
+핵심은 다음입니다.
+
+- `minimum_risk_reward`: 주문이 실행되기 위해 만족해야 하는 최소 손익비
+- `target_rr`: Chief Trader가 실행용 TP를 계산할 때 사용하는 목표 손익비
+- `exit_plan`: primary target, runner, full exit처럼 청산 의도를 설명하는 메타데이터
+
+현재 런타임은 단일 executable TP만 지원하므로, 전략 문서에 1:3 runner가 적혀 있더라도 실제 주문은 `minimum_risk_reward`를 만족하는 **단일 TP**로 변환되어야 합니다.
+
+즉, 새 전략을 추가할 때마다 Chief Trader 로직을 전략별로 고치는 방식이 아니라:
+
+1. 전략 문서에 실행 계약을 적고
+2. `backend/config/strategies_config.json`에 같은 계약을 넣고
+3. Chief Trader는 그 계약을 읽어 공통 규칙으로 TP를 계산합니다.
+
+이 방식이어야 전략이 늘어나도 Chief Trader 유지보수 비용이 폭증하지 않습니다.
+
 ### 4. quant research baseline을 만듭니다
 
 `backend/features/trading/quant_research.py`와 `backend/scripts/run_quant_research.py`에 전략별 baseline을 추가합니다.
@@ -189,6 +209,7 @@ make quant-run \
 - [ ] 거래 수가 충분하다.
 - [ ] 월별로 일관성이 있다.
 - [ ] validator와 quant baseline이 같은 방향의 조건을 평가한다.
+- [ ] Chief Trader가 전략 문서의 `minimum_risk_reward`와 registry 계약을 읽고 실행용 TP를 계산한다.
 - [x] No-Trade Audit을 통해 후보 없음/validator 차단/guardrail 차단을 분리했다.
 - [ ] 테스트가 존재한다.
 - [ ] 단독 전략으로 먼저 검증했으며, 다른 전략과 섞지 않았다.

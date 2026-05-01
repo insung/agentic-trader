@@ -30,3 +30,5 @@ htmlcov/
 # Backtest data, results, reports & trading logs
 backtests/
 trading_logs/
+
+.worktrees

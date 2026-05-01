@@ -1,0 +1,285 @@
+import os
+import json
+import asyncio
+import traceback
+import uuid
+from datetime import datetime, timezone
+from typing import List, Optional, Dict, Any
+
+from backend.workflows.graph import get_compiled_graph
+from backend.features.trading.mt5_adapter import MT5Client, execute_mock_order
+from backend.core.state_models import Order, OrderAction, OrderResult
+from backend.features.trading.guardrails import validate_order_prices, enforce_one_percent_rule
+from backend.features.trading.strategy_validators import validate_strategy_setup
+from backend.features.trading.position_tracker import build_decision_context, track_open_position
+from backend.features.trading.usecase import TradeExecutionUseCase
+from backend.features.trading.trigger_store import (
+    create_trigger_run,
+    update_trigger_run,
+    add_trigger_event,
+    save_trigger_snapshot
+)
+
+def _model_to_dict(value):
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    if isinstance(value, list):
+        return [_model_to_dict(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _model_to_dict(v) for k, v in value.items()}
+    return value
+
+async def run_trading_workflow_async(
+    symbol: str, 
+    timeframes: List[str] = None, 
+    mode: str = "paper", 
+    strategy_override: str = None,
+    trigger_id: str = None,
+    rule_id: str = None
+):
+    """
+    Asynchronous version of the trading workflow with trigger logging.
+    """
+    mode = mode.lower()
+    if timeframes is None:
+        timeframes = ["M5"]
+    
+    # Generate a unique workflow_run_id for this execution
+    workflow_run_id = f"run_{uuid.uuid4().hex[:12]}"
+    request_payload = {
+        "symbol": symbol,
+        "timeframes": timeframes,
+        "mode": mode,
+        "strategy_override": strategy_override,
+        "trigger_id": trigger_id,
+        "rule_id": rule_id,
+        "workflow_run_id": workflow_run_id,
+    }
+    
+    # 1. Initialize Trigger Run in DB if not provided
+    if not trigger_id:
+        trigger_id = create_trigger_run(None, {
+            "rule_id": rule_id,
+            "workflow_run_id": workflow_run_id,
+            "symbol": symbol,
+            "timeframes": timeframes,
+            "mode": mode,
+            "strategy_override": strategy_override,
+            "status": "running",
+            "scheduled_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": datetime.now(timezone.utc).isoformat()
+        })
+    else:
+        update_trigger_run(None, trigger_id, {
+            "status": "running",
+            "workflow_run_id": workflow_run_id,
+            "started_at": datetime.now(timezone.utc).isoformat()
+        })
+
+    add_trigger_event(None, trigger_id, "started", message=f"Starting workflow for {symbol}")
+    
+    start_time = datetime.now()
+    final_state = {}
+    
+    def finalize_run(status: str, workflow_status: str = "completed", final_action: str = None, error_message: str = None, guardrail_result: Any = None):
+        end_time = datetime.now()
+        duration_ms = int((end_time - start_time).total_seconds() * 1000)
+        
+        update_trigger_run(None, trigger_id, {
+            "status": status,
+            "workflow_status": workflow_status,
+            "final_action": final_action,
+            "error_message": error_message,
+            "duration_ms": duration_ms,
+            "finished_at": datetime.now(timezone.utc).isoformat()
+        })
+        
+        # Save comprehensive snapshot
+        save_trigger_snapshot(None, trigger_id, {
+            "request": request_payload,
+            "initial_state": _model_to_dict({
+                "symbol": symbol, 
+                "timeframes": timeframes,
+                "mode": mode,
+                "strategy_override": strategy_override
+            }),
+            "final_state": _model_to_dict(final_state),
+            "final_order": _model_to_dict(final_state.get("final_order")),
+            "decision_context": _model_to_dict(final_state.get("decision_context")),
+            "guardrail_result": guardrail_result,
+            "strategy_snapshot": _model_to_dict(final_state.get("strategy_hypothesis"))
+        })
+
+    try:
+        # 2. Run LangGraph
+        graph = get_compiled_graph()
+        initial_state = {
+            "symbol": symbol, 
+            "timeframes": timeframes,
+            "trigger_id": trigger_id,
+            "mode": mode,
+            "strategy_override": strategy_override
+        }
+        
+        add_trigger_event(None, trigger_id, "workflow_started")
+        
+        final_state = initial_state.copy()
+        for s in graph.stream(initial_state):
+            node_name = list(s.keys())[0]
+            node_data = list(s.values())[0]
+            final_state.update(node_data)
+            add_trigger_event(None, trigger_id, "node_completed", node_name=node_name)
+            
+        add_trigger_event(None, trigger_id, "workflow_completed")
+
+        # 3. Intercept Results
+        if final_state.get("error_flag"):
+            error_msg = final_state.get("error_message", "Unknown error")
+            add_trigger_event(None, trigger_id, "failed", message=error_msg)
+            finalize_run(status="failed", workflow_status="error", error_message=error_msg)
+            return
+
+        final_order_obj = final_state.get("final_order")
+        final_order = _model_to_dict(final_order_obj)
+        
+        if not final_order:
+            add_trigger_event(None, trigger_id, "finished", message="No order generated")
+            finalize_run(status="success", final_action="NONE")
+            return
+            
+        action = final_order.get("action", "HOLD")
+        
+        if action.upper() in ["HOLD", "WAIT"]:
+            add_trigger_event(None, trigger_id, "finished", message=f"Decision: {action}")
+            finalize_run(status="success", final_action=action)
+            return
+            
+        # 4. Guardrails & Validators
+        sl = final_order.get("sl_price", final_order.get("sl", 0.0))
+        tp = final_order.get("tp_price", final_order.get("tp", 0.0))
+        entry_price = final_order.get("entry_price", 0.0)
+        
+        account_balance = final_state.get("account_info", {}).get("balance", 10000.0)
+        risk_per_trade_pct = float(os.environ.get("RISK_PER_TRADE_PCT", "0.005"))
+        
+        # Price Direction & R/R Guardrail
+        if not validate_order_prices(action, entry_price, sl, tp):
+            reject_reason = f"Invalid SL/TP or Risk/Reward (entry={entry_price}, sl={sl}, tp={tp})"
+            add_trigger_event(None, trigger_id, "guardrail_rejected", message=reject_reason)
+            finalize_run(status="blocked", final_action=action, error_message=reject_reason, guardrail_result={
+                "type": "price_guardrail",
+                "success": False,
+                "message": reject_reason,
+                "data": {"entry": entry_price, "sl": sl, "tp": tp}
+            })
+            return
+
+        # Strategy Specific Validator
+        setup_ok, setup_reason = validate_strategy_setup(
+            action,
+            entry_price,
+            sl,
+            final_state.get("strategy_hypothesis", {}),
+            final_state.get("indicator_data", {}),
+        )
+        if not setup_ok:
+            add_trigger_event(None, trigger_id, "guardrail_rejected", message=setup_reason)
+            finalize_run(status="blocked", final_action=action, error_message=setup_reason, guardrail_result={
+                "type": "strategy_validator",
+                "success": False,
+                "message": setup_reason
+            })
+            return
+
+        # 5. Execution
+        order = Order(
+            action=OrderAction(action.upper()),
+            symbol=symbol,
+            entry_price=entry_price,
+            sl_price=sl,
+            tp_price=tp,
+            reasoning=final_order.get("reasoning", "")
+        )
+        
+        order_result_data = {}
+        if mode == "live":
+            add_trigger_event(None, trigger_id, "order_submitted", message="Submitting LIVE order")
+            usecase = TradeExecutionUseCase(MT5Client())
+            result = usecase.execute_trade(
+                order=order,
+                current_loss_pct=0.0, 
+                today_trade_count=0,
+                account_balance=account_balance,
+                risk_per_trade_pct=risk_per_trade_pct,
+            )
+            order_result_data = result.model_dump()
+        else:
+            add_trigger_event(None, trigger_id, "order_submitted", message="Executing PAPER order")
+            safe_lot = enforce_one_percent_rule(account_balance, entry_price, sl, risk_pct=risk_per_trade_pct)
+            if safe_lot <= 0:
+                reject_reason = f"Risk management blocked order: safe lot calculated to {safe_lot}"
+                add_trigger_event(None, trigger_id, "guardrail_rejected", message=reject_reason)
+                finalize_run(status="blocked", final_action=action, error_message=reject_reason, guardrail_result={
+                    "type": "risk_guardrail",
+                    "success": False,
+                    "message": reject_reason
+                })
+                return
+            
+            result = execute_mock_order(symbol, action, safe_lot, sl, tp, entry_price)
+            order_result_data = {
+                "success": result.get("retcode") == 10009,
+                "ticket": result.get("order"),
+                "executed_price": result.get("price"),
+                "timestamp": result.get("time") or datetime.now(timezone.utc).isoformat(),
+            }
+            order.lot_size = safe_lot
+
+        if order_result_data.get("success"):
+            add_trigger_event(None, trigger_id, "order_acked", message=f"Order success: ticket {order_result_data.get('ticket')}")
+            decision_context = build_decision_context(final_state, order_result_data)
+            track_open_position(
+                mode=mode,
+                symbol=symbol,
+                action=action,
+                entry_price=order_result_data.get("executed_price") or entry_price,
+                sl=sl,
+                tp=tp,
+                lot_size=order.lot_size,
+                order_result=order_result_data,
+                decision_context=decision_context,
+            )
+            final_state["decision_context"] = decision_context
+            finalize_run(status="success", final_action=action, guardrail_result={"success": True})
+        else:
+            err = order_result_data.get("error_message") or "Unknown execution error"
+            add_trigger_event(None, trigger_id, "order_failed", message=err)
+            finalize_run(status="failed", final_action=action, error_message=err)
+
+    except Exception as e:
+        err_msg = str(e)
+        tb_str = traceback.format_exc()
+        full_error = f"{err_msg}\n\nTraceback:\n{tb_str}"
+        print(f"❌ Error in trading workflow for {symbol}: {err_msg}")
+        add_trigger_event(None, trigger_id, "failed", message=err_msg)
+        finalize_run(status="failed", workflow_status="error", error_message=full_error)
+
+def run_trading_workflow(
+    symbol: str, 
+    timeframes: List[str] = None, 
+    mode: str = "paper", 
+    strategy_override: str = None,
+    trigger_id: str = None,
+    rule_id: str = None
+):
+    """
+    Synchronous wrapper for compatibility.
+    """
+    return asyncio.run(run_trading_workflow_async(
+        symbol=symbol,
+        timeframes=timeframes,
+        mode=mode,
+        strategy_override=strategy_override,
+        trigger_id=trigger_id,
+        rule_id=rule_id
+    ))

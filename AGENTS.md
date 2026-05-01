@@ -2,6 +2,11 @@
 
 이 파일은 Codex, Gemini CLI, Google Antigravity 등 이 저장소에 접속하는 모든 AI 세션의 **공통 지침 SSOT(Single Source of Truth)**입니다. 도구별 설정 파일이 있더라도 프로젝트 원칙은 이 파일을 우선합니다.
 
+## 1. Rules
+
+프로젝트를 구현할 때 다음 룰을 따라라. 
+- .agents/rules/project-rule.md
+
 ## 1. Project Goal
 
 우리는 단순한 트레이딩 봇이 아니라 **"나만의 무인 펀드 회사(Zero-Human Hedge Fund)"**를 구축합니다.

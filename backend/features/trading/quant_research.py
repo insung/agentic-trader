@@ -51,13 +51,6 @@ class QuantResearchConfig:
     macd_fast_windows: List[int] | None = None
     macd_slow_windows: List[int] | None = None
     macd_signal_windows: List[int] | None = None
-    ma_adx_mins: List[int] | None = None
-    ma_max_cross_age_bars: List[int] | None = None
-    random_seed: int = 42
-    random_entry_prob: float = 0.01
-    random_long_bias: float = 0.5
-    random_min_hold_bars: int = 3
-    random_max_hold_bars: int = 12
     random_seed: int | None = 42
     random_entry_prob: float | None = 0.01
     random_long_bias: float | None = 0.5
@@ -1320,13 +1313,6 @@ def run_macd_research(
             macd_line = ema_fast - ema_slow
 
             for signal_window in macd_signal_windows:
-    ma_adx_mins: List[int] | None = None
-    ma_max_cross_age_bars: List[int] | None = None
-    random_seed: int = 42
-    random_entry_prob: float = 0.01
-    random_long_bias: float = 0.5
-    random_min_hold_bars: int = 3
-    random_max_hold_bars: int = 12
                 signal_line = macd_line.ewm(span=signal_window, adjust=False).mean()
                 macd_hist = macd_line - signal_line
 

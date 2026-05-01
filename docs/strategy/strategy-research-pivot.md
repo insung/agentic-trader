@@ -75,12 +75,12 @@ Guardrail executes or blocks
 
 ### 1. No-Trade Audit
 
-- [ ] 최근 run의 regime 분포를 집계합니다.
-- [ ] 전략 주입 여부를 집계합니다.
-- [ ] LLM이 주문 후보를 냈는지 집계합니다.
-- [ ] validator 차단 사유를 집계합니다.
-- [ ] guardrail 차단 사유를 집계합니다.
-- [ ] HOLD reasoning을 키워드 또는 구조화 reason으로 분류합니다.
+- [x] 최근 run의 regime 분포를 집계합니다.
+- [x] 전략 주입 여부를 집계합니다.
+- [x] LLM이 주문 후보를 냈는지 집계합니다.
+- [x] validator 차단 사유를 집계합니다.
+- [x] guardrail 차단 사유를 집계합니다.
+- [x] HOLD reasoning을 키워드 또는 구조화 reason으로 분류합니다.
 - [ ] 이후 N개 캔들에서 진입했으면 TP/SL 중 무엇이 먼저 닿았는지 시뮬레이션합니다.
 
 ### 2. Deterministic Baseline Backtests
@@ -107,7 +107,7 @@ Guardrail executes or blocks
 - [x] 저장된 quant run을 비교하는 `make quant-summary`를 추가합니다.
   - 대화에 붙여넣은 결과가 아니라 SQLite `quant_runs`, `quant_results` 기준으로 전략별 rank 1 결과를 비교합니다.
   - 월별 비교가 필요하면 `SUMMARY_MONTHLY=1`로 `data_from` 월별 best run을 확인합니다.
-- [ ] LLM 없이 MA Crossover baseline을 구현합니다.
+- [x] LLM 없이 MA Crossover baseline을 구현합니다.
 - [x] Buy & Hold benchmark를 추가합니다.
 - [x] No-trade benchmark를 추가합니다.
 - [x] Random benchmark를 추가합니다.
@@ -141,17 +141,17 @@ Guardrail executes or blocks
 
 ## 다음 AI 세션의 시작 작업
 
-가장 먼저 할 작업은 `No-Trade Audit`입니다.
+No-Trade Audit은 구현되어 있습니다. 이제는 월별 walk-forward와 MA Crossover 승격 검증을 우선합니다.
 
 완료 기준:
 
-- [ ] 입력으로 `run_id`를 받습니다.
-- [ ] `backtest_runs`, `backtest_decisions`, `backtest_trades`, `candles`를 조회합니다.
-- [ ] regime, strategy, status, action, rejection reason을 집계합니다.
-- [ ] HOLD reason을 최소한 키워드 기반으로 분류합니다.
-- [ ] 결과를 콘솔 또는 Markdown으로 출력합니다.
-- [ ] 이후 API/UI에서 재사용할 수 있게 Python 함수로 분리합니다.
-- [ ] 테스트를 추가합니다.
+- [x] 입력으로 `run_id`를 받습니다.
+- [x] `backtest_runs`, `backtest_decisions`, `backtest_trades`, `candles`를 조회합니다.
+- [x] regime, strategy, status, action, rejection reason을 집계합니다.
+- [x] HOLD reason을 최소한 키워드 기반으로 분류합니다.
+- [x] 결과를 콘솔 또는 Markdown으로 출력합니다.
+- [x] 이후 API/UI에서 재사용할 수 있게 Python 함수로 분리합니다.
+- [x] 테스트를 추가합니다.
 
 ## 관련 문서
 

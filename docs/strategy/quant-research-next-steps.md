@@ -46,7 +46,7 @@ MACD는 연구용 baseline으로는 남겨둘 수 있지만, 현재 결과만으
 
 ### 5. blocked-trade / no-trade audit
 
-왜 거래가 없었는지, 왜 차단됐는지 분리해서 봅니다.
+No-Trade Audit을 구현했습니다. 이제 run_id 기준으로 거래가 없었던 이유와 차단 사유를 분리해서 봅니다.
 
 ## 다음 실험 순서
 
@@ -55,7 +55,7 @@ MACD는 연구용 baseline으로는 남겨둘 수 있지만, 현재 결과만으
 3. 1~6개월 구간에서 같은 파라미터가 유지되는지 확인합니다.
 4. MACD는 추가 실험보다 보류 대상으로 둡니다.
 5. Random benchmark를 고정 비교 기준으로 유지합니다.
-6. No-Trade Audit을 추가합니다.
+6. No-Trade Audit을 run_id 기준으로 사용합니다.
 
 ## 현재 보류할 것
 

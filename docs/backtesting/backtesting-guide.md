@@ -101,6 +101,12 @@ make quant-summary \
   SUMMARY_RUN_ID=QR_BTCUSD_20260430_143755
 ```
 
+No-Trade Audit은 `backtest_decisions`와 `backtest_trades`를 run_id 기준으로 읽어, HOLD/SKIP/REJECTED의 원인을 요약합니다.
+
+```bash
+make no-trade-audit RUN_ID=BTCUSD_20260429_221853
+```
+
 멀티 타임프레임 Bollinger + RSI 실험은 `bollinger_mtf`를 사용합니다. 기본 구조는 `TIMEFRAME`에서 진입 타이밍을 보고, `FILTER_TIMEFRAME`에서 강한 추세 역행 진입을 막는 단일 전략입니다.
 
 ```bash

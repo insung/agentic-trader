@@ -1,4 +1,4 @@
-.PHONY: test run run-wine trigger reconcile cli install install-quant venv migrate-legacy-data quant-run quant-summary
+.PHONY: test run run-wine trigger reconcile cli install install-quant venv migrate-legacy-data quant-run quant-summary no-trade-audit
 
 # 기본 환경 변수 설정
 export PYTHONPATH := .
@@ -205,6 +205,12 @@ quant-summary: venv
 		$(if $(SUMMARY_STRATEGY),--strategy $(SUMMARY_STRATEGY),) \
 		$(SUMMARY_MONTHLY_FLAG) \
 		--limit $(SUMMARY_LIMIT)
+
+no-trade-audit: venv
+	@if [ -z "$(RUN_ID)" ]; then echo "RUN_ID is required. Example: make no-trade-audit RUN_ID=BT-123"; exit 1; fi
+	$(VENV_BIN)/python -m backend.scripts.run_no_trade_audit \
+		--data-db "$(DATA_DB)" \
+		--run-id "$(RUN_ID)"
 
 migrate-legacy-data: venv
 	@echo "Migrating legacy backtest/trading log artifacts into SQLite..."

@@ -209,6 +209,12 @@ make quant-summary SYMBOL=BTCUSD FROM=2025-01-01 TO=2025-02-28
 
 월별 요약은 `SUMMARY_MONTHLY=1`로 실행합니다.
 
+No-Trade Audit은 `run_id` 기준으로 backtest_decisions/backtest_trades를 요약해 무매매, 차단, HOLD 원인을 분리합니다.
+
+```bash
+make no-trade-audit RUN_ID=BTCUSD_20260429_221853
+```
+
 기존 CSV/JSON/Markdown 산출물 마이그레이션:
 
 ```bash

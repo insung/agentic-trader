@@ -189,7 +189,7 @@ make quant-run \
 - [ ] 거래 수가 충분하다.
 - [ ] 월별로 일관성이 있다.
 - [ ] validator와 quant baseline이 같은 방향의 조건을 평가한다.
-- [ ] No-Trade Audit을 통해 후보 없음/validator 차단/guardrail 차단을 분리했다.
+- [x] No-Trade Audit을 통해 후보 없음/validator 차단/guardrail 차단을 분리했다.
 - [ ] 테스트가 존재한다.
 - [ ] 단독 전략으로 먼저 검증했으며, 다른 전략과 섞지 않았다.
 

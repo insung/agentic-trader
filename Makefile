@@ -148,10 +148,21 @@ TOP ?= 10
 SUMMARY_LIMIT ?= 50
 SUMMARY_STRATEGY ?=
 SUMMARY_RUN_ID ?=
+SUMMARY_SYMBOL ?=
 SUMMARY_MONTHLY ?= 0
 SUMMARY_MONTHLY_FLAG :=
 ifeq ($(SUMMARY_MONTHLY),1)
 SUMMARY_MONTHLY_FLAG := --monthly
+endif
+SUMMARY_SYMBOL_ARG :=
+ifeq ($(strip $(SUMMARY_SYMBOL)),)
+ifneq ($(strip $(SUMMARY_RUN_ID)),)
+SUMMARY_SYMBOL_ARG :=
+else
+SUMMARY_SYMBOL_ARG := --symbol $(SYMBOL)
+endif
+else
+SUMMARY_SYMBOL_ARG := --symbol $(SUMMARY_SYMBOL)
 endif
 
 quant-run: venv
@@ -203,7 +214,7 @@ quant-summary: venv
 	$(VENV_BIN)/python -m backend.scripts.summarize_quant_research \
 		--data-db "$(DATA_DB)" \
 		$(if $(SUMMARY_RUN_ID),--run-id $(SUMMARY_RUN_ID),) \
-		$(if $(SYMBOL),--symbol $(SYMBOL),) \
+		$(SUMMARY_SYMBOL_ARG) \
 		$(if $(FROM),--from "$(FROM)",) \
 		$(if $(TO),--to "$(TO)",) \
 		$(if $(SUMMARY_STRATEGY),--strategy $(SUMMARY_STRATEGY),) \

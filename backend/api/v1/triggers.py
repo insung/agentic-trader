@@ -22,6 +22,8 @@ async def list_trigger_history(
     limit: int = 50,
     status: Optional[str] = None,
     symbol: Optional[str] = None,
+    mode: Optional[str] = None,
+    rule_id: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
 ):
@@ -30,22 +32,23 @@ async def list_trigger_history(
         limit=limit,
         status=status,
         symbol=symbol,
+        mode=mode,
+        rule_id=rule_id,
         start_date=start_date,
         end_date=end_date,
     )
 
 
 @router.get("/rules")
-async def list_trigger_rules():
+async def list_trigger_rules(enabled: Optional[bool] = None):
     """등록된 스케줄 규칙 목록을 반환합니다."""
-    return list_schedule_rules()
+    return list_schedule_rules(enabled=enabled)
 
 
 @router.post("/rules")
 async def create_or_update_rule(request: ScheduleRuleRequest):
     """스케줄 규칙을 생성하거나 업데이트합니다."""
     rule_data = request.model_dump()
-    rule_data["schedule_type"] = "interval"
     rule_id = upsert_schedule_rule(None, rule_data)
     return {"status": "ok", "rule_id": rule_id}
 

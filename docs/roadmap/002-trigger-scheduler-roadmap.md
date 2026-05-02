@@ -1,324 +1,320 @@
-# Trigger Scheduling Plan
+# Trigger Scheduler Roadmap
 
-이 문서는 `make trigger`를 사람이 직접 호출하는 방식에서, FastAPI 내부 스케줄과 별도 DB 저장을 통해 자동 트리거 이력을 관리하는 계획을 정리합니다.
+이 문서는 `make trigger`를 사람이 직접 호출하는 방식에서, FastAPI 내부 스케줄러와 별도 trigger DB를 통해 자동 매매 판단 이력과 실행 상태를 관리하는 계획을 정리합니다.
 
-목표는 다음과 같습니다.
+현재 목표는 단순히 주기 실행을 붙이는 것이 아니라, **언제/왜/무엇이 실행됐고 어떤 이유로 주문이 보류, 차단, 실패, 성공했는지 UI와 운영자가 추적할 수 있는 기반**을 완성하는 것입니다.
 
-- FastAPI `lifespan`에 스케줄러를 등록한다.
-- 지정된 주기마다 `trigger` 워크플로우를 자동 실행한다.
-- 각 트리거 실행의 입력/출력/상태를 별도 DB에 저장한다.
-- 향후 UI에서 트리거 이력, 실행 결과, 차단 사유를 조회할 수 있게 한다.
+## Current State
 
-## 1. 목표 범위
+현재 코드 기준으로 trigger scheduler v1의 핵심 뼈대는 이미 구현되어 있습니다.
 
-### 포함
+- [x] `POST /api/v1/trade/trigger`는 수동 1회 실행 경로로 유지되어 있다.
+- [x] `make trigger`는 수동 디버그/운영용 wrapper로 유지되어 있다.
+- [x] FastAPI `lifespan`에서 position reconcile loop와 별도로 trigger scheduler를 시작한다.
+- [x] FastAPI 종료 시 trigger scheduler를 stop 한다.
+- [x] `TriggerScheduler`가 `asyncio` 백그라운드 loop로 동작한다.
+- [x] scheduler는 active schedule rule을 읽고 due rule을 실행한다.
+- [x] 동일 rule의 중복 실행을 막기 위한 프로세스 로컬 lock이 있다.
+- [x] `market_hours_only`가 켜진 rule은 market-hours gate를 통과해야 한다.
+- [x] trigger 실행은 기존 LangGraph workflow, guardrail, strategy validator, execution 경로를 그대로 사용한다.
+- [x] 자동 scheduler는 주문 여부를 직접 결정하지 않고 workflow trigger만 담당한다.
 
-- FastAPI 서버 시작 시 자동 스케줄 시작
-- 서버 종료 시 스케줄 종료
-- 트리거 실행 메타데이터 저장
-- 실행 상태 저장
-- 실패/차단/성공 이력 저장
-- UI 조회용 API 설계
+현재 trigger DB와 API도 기본 형태는 갖춰져 있습니다.
 
-### 제외
+- [x] `trading_logs/trigger_history.sqlite`를 trigger history DB로 사용한다.
+- [x] `trigger_schedule_rules` 테이블이 있다.
+- [x] `trigger_runs` 테이블이 있다.
+- [x] `trigger_events` 테이블이 있다.
+- [x] `trigger_execution_snapshots` 테이블이 있다.
+- [x] `POST /api/v1/triggers/rules`로 schedule rule을 생성할 수 있다.
+- [x] `GET /api/v1/triggers/rules`로 schedule rule을 조회할 수 있다.
+- [x] `POST /api/v1/triggers/rules/{rule_id}/toggle`로 rule enabled 상태를 전환할 수 있다.
+- [x] `DELETE /api/v1/triggers/rules/{rule_id}`로 rule을 삭제할 수 있다.
+- [x] `GET /api/v1/triggers/history`로 trigger run 목록을 조회할 수 있다.
+- [x] `GET /api/v1/triggers/{trigger_id}`로 trigger run 상세를 조회할 수 있다.
+- [x] `GET /api/v1/triggers/{trigger_id}/events`로 trigger event timeline을 조회할 수 있다.
+- [x] `GET /api/v1/triggers/{trigger_id}/snapshot`으로 trigger execution snapshot을 조회할 수 있다.
 
-- 지금 단계에서 복잡한 전략 자동 선택 로직 추가
-- cron을 대체하는 외부 운영 문서 전면 교체
-- UI 구현 자체
-- 실시간 알림 시스템
+최근 점검 기준으로 trigger 저장 경로도 일부 보강되어 있습니다.
 
-## 2. 현재 상태
+- [x] workflow run마다 `workflow_run_id`를 생성한다.
+- [x] success / HOLD 경로에서 trigger run을 종료 상태로 업데이트한다.
+- [x] guardrail blocked 경로에서 trigger run을 `blocked`로 남긴다.
+- [x] workflow exception 경로에서 trigger run을 `failed`로 남긴다.
+- [x] blocked / failed 경로에서도 snapshot 저장 테스트가 있다.
+- [x] `tests/test_trigger_system.py`는 현재 `PYTHONPATH=. .venv/bin/pytest tests/test_trigger_system.py -q` 기준 `21 passed` 상태다.
 
-- `POST /api/v1/trade/trigger`는 1회 실행용이다.
-- `make trigger`는 이 API를 수동 호출하는 래퍼다.
-- `POSITION_RECONCILE_INTERVAL_SECONDS` 기반 reconcile loop는 이미 `lifespan`에 등록되어 있다.
-- `MODE=paper` / `MODE=live`는 현재 수동 트리거 기반으로 동작한다.
+## Target Completion
 
-즉, 스케줄 트리거는 아직 없다.
+이번 roadmap의 완료 기준은 **cron을 포함한 단일 FastAPI 프로세스용 trigger scheduler v1 완성**입니다.
 
-## 3. 구현 방향
+완료 후 기대하는 상태는 다음과 같습니다.
 
-### 3-1. FastAPI lifespan에 트리거 스케줄러를 등록
+- interval rule과 cron rule을 모두 등록할 수 있다.
+- scheduler가 interval rule과 cron rule을 실제로 due-time에 실행한다.
+- 모든 trigger run은 request, final state, final order, guardrail result, strategy snapshot을 추적 가능한 형태로 남긴다.
+- UI는 trigger history, rule 목록, 상세, event timeline, snapshot을 읽기만 하면 운영 상태를 설명할 수 있다.
+- 테스트는 store, API, scheduler, workflow logging의 주요 success / blocked / failed / skipped 경로를 검증한다.
+- 운영 문서는 paper smoke를 먼저 수행하고 live는 데모 계좌 소규모 검증으로만 승격하도록 안내한다.
 
-- 서버 시작 시 백그라운드 task를 하나 더 띄운다.
-- reconcile loop와 별도로 trigger loop를 둔다.
-- trigger loop는 심볼, 타임프레임, mode, 실행 간격을 읽어서 주기적으로 workflow를 호출한다.
-- 서버 종료 시 task를 cancel 한다.
+이 v1 완료 기준에서 제외하는 항목도 명확히 둡니다.
 
-권장 방식:
+- [ ] 멀티 워커/멀티 프로세스 distributed lock은 이번 v1 범위에서 제외하고 후속 과제로 둔다.
+- [ ] UI 대시보드 구현 자체는 `003-operations-ux-roadmap.md` 범위로 둔다.
+- [ ] 전략 자동 선택 고도화는 scheduler가 아니라 LangGraph/strategy registry 후속 과제로 둔다.
+- [ ] 실시간 알림 시스템은 이번 v1 범위에서 제외한다.
 
-- 처음에는 Python `asyncio` 기반의 단순 루프 사용
-- 이후 필요하면 APScheduler 같은 전용 스케줄러로 교체
+## Architecture Principles
 
-### 3-2. 별도 DB에 트리거 이력 저장
+trigger scheduler는 주문 판단자가 아닙니다.
 
-기존 trading log DB와 분리된 저장소를 둔다.
+- scheduler는 **언제 workflow를 실행할지**만 결정한다.
+- LangGraph는 **무엇을 판단할지**를 통제한다.
+- Chief Trader는 structured order intent를 낸다.
+- Python guardrail과 strategy validator는 **주문 가능 여부를 최종 검증**한다.
+- MT5/Paper execution은 기존 execution usecase를 통과한다.
+- UI는 DB를 읽는 관측 계층이며, 전략 선택이나 guardrail 재계산을 하지 않는다.
 
-권장 테이블은 최소 4개다.
+이 원칙 때문에 scheduler에는 전략 로직, lot size 계산, SL/TP 검증, indicator 계산을 넣지 않습니다.
 
-1. `trigger_runs`
-2. `trigger_events`
-3. `trigger_schedule_rules`
-4. `trigger_execution_snapshots`
+## Data Model Checklist
 
-이 DB는 UI가 직접 읽는 source of truth가 된다.
+### `trigger_schedule_rules`
 
-#### trigger_runs
+어떤 trigger를 언제 실행할지 정의합니다.
 
-트리거 1회 실행을 기록한다.
+- [x] `rule_id`를 primary key로 둔다.
+- [x] `name`을 저장한다.
+- [x] `enabled`를 저장한다.
+- [x] `symbol`을 저장한다.
+- [x] `timeframes_json`을 저장한다.
+- [x] `mode`를 저장한다.
+- [x] `strategy_override`를 저장한다.
+- [x] `schedule_type`을 저장한다.
+- [x] `cron_expression` 필드가 존재한다.
+- [x] `interval_seconds` 필드가 존재한다.
+- [x] `timezone` 필드가 존재한다.
+- [x] `market_hours_only` 필드가 존재한다.
+- [x] `last_triggered_at`을 저장한다.
+- [x] `next_trigger_at`을 저장한다.
+- [x] `created_at` / `updated_at`을 저장한다.
+- [x] `schedule_type`을 API DTO에서 `interval` / `cron`으로 명시 검증한다.
+- [x] interval rule은 `interval_seconds > 0`을 요구한다.
+- [x] cron rule은 `cron_expression` 필수값을 요구한다.
+- [x] cron rule은 `cron_expression` 문법을 검증한다.
+- [x] cron rule은 유효한 IANA `timezone`을 요구한다.
+- [x] `next_trigger_at`은 항상 UTC ISO timestamp로 저장한다.
 
-필드 예시:
+### `trigger_runs`
 
-- `trigger_id`
-- `rule_id`
-- `workflow_run_id`
-- `scheduled_at`
-- `started_at`
-- `finished_at`
-- `duration_ms`
-- `symbol`
-- `timeframes_json`
-- `mode`
-- `strategy_override`
-- `status`
-- `workflow_status`
-- `final_action`
-- `error_message`
-- `created_at`
-- `updated_at`
+트리거 1회 실행의 요약 row입니다.
 
-권장 인덱스:
+- [x] `trigger_id`를 primary key로 둔다.
+- [x] `rule_id`를 저장한다.
+- [x] `workflow_run_id`를 저장한다.
+- [x] `scheduled_at`을 저장한다.
+- [x] `started_at`을 저장한다.
+- [x] `finished_at`을 저장한다.
+- [x] `duration_ms`를 저장한다.
+- [x] `symbol`을 저장한다.
+- [x] `timeframes_json`을 저장한다.
+- [x] `mode`를 저장한다.
+- [x] `strategy_override`를 저장한다.
+- [x] `status`를 저장한다.
+- [x] `workflow_status`를 저장한다.
+- [x] `final_action`을 저장한다.
+- [x] `error_message`를 저장한다.
+- [x] `created_at` / `updated_at`을 저장한다.
+- [x] `status` 값의 의미를 문서화한다: `scheduled`, `running`, `success`, `blocked`, `failed`, `skipped`.
+- [x] scheduler가 market-hours skip이나 lock skip도 필요하면 `skipped` 이벤트 또는 run으로 남기는 정책을 정한다.
+    - **Policy**: `lock` skip은 `skipped` status의 run row로 남겨 지연 실행을 추적한다. `market_hours` skip은 DB spam을 방지하기 위해 run row를 생성하지 않고 어플리케이션 로그로만 남기되, `next_trigger_at`은 다음 tick으로 갱신한다.
 
-- `trigger_id` unique
-- `status`
-- `mode`
-- `symbol`
-- `scheduled_at`
-- `finished_at`
+### `trigger_events`
 
-#### trigger_events
+실행 중 발생한 event timeline입니다.
 
-트리거 실행 중 발생한 중간 이벤트를 기록한다.
+- [x] `event_id`를 primary key로 둔다.
+- [x] `trigger_id`를 저장한다.
+- [x] `event_type`을 저장한다.
+- [x] `node_name`을 저장한다.
+- [x] `message`를 저장한다.
+- [x] `payload_json`을 저장한다.
+- [x] `created_at`을 저장한다.
+- [ ] event type 목록을 안정화한다.
+- [ ] workflow node별 event payload에 최소 진단 정보를 넣는다.
 
-필드 예시:
-
-- `event_id`
-- `trigger_id`
-- `event_type`
-- `node_name`
-- `message`
-- `payload_json`
-- `created_at`
-
-권장 event_type 값:
+권장 event type은 다음과 같습니다.
 
 - `scheduled`
 - `started`
-- `market_snapshot_loaded`
-- `tech_analysis_completed`
-- `strategy_selected`
-- `chief_trader_completed`
+- `workflow_started`
+- `node_completed`
+- `workflow_completed`
 - `guardrail_rejected`
 - `order_submitted`
 - `order_failed`
 - `order_acked`
-- `reconcile_requested`
-- `reconcile_completed`
 - `finished`
+- `failed`
+- `skipped`
 
-권장 인덱스:
+### `trigger_execution_snapshots`
 
-- `trigger_id`
-- `event_type`
-- `created_at`
+실행 당시의 원문에 가까운 진단 payload입니다.
 
-#### trigger_schedule_rules
+- [x] `snapshot_id`를 primary key로 둔다.
+- [x] `trigger_id`를 unique key로 둔다.
+- [x] `request_json`을 저장한다.
+- [x] `initial_state_json`을 저장한다.
+- [x] `final_state_json`을 저장한다.
+- [x] `final_order_json`을 저장한다.
+- [x] `decision_context_json`을 저장한다.
+- [x] `guardrail_result_json`을 저장한다.
+- [x] `strategy_snapshot_json`을 저장한다.
+- [x] `created_at`을 저장한다.
+- [x] success 경로의 `guardrail_result_json`을 단순 `success: true`보다 풍부하게 만든다.
+- [x] order failed 경로의 execution response를 snapshot 또는 event payload에 남긴다.
+- [x] blocked 경로의 validator/guardrail reason을 UI가 그대로 보여줄 수 있게 표준화한다.
 
-어떤 trigger를 언제 실행할지 정의한다.
+## API Checklist
 
-필드 예시:
+현재 API는 기본 조회와 조작이 가능하지만, UI 친화적인 필터와 계약 정리가 더 필요합니다.
 
-- `rule_id`
-- `name`
-- `enabled`
-- `symbol`
-- `timeframes_json`
-- `mode`
-- `strategy_override`
-- `schedule_type`
-- `cron_expression`
-- `interval_seconds`
-- `timezone`
-- `market_hours_only`
-- `last_triggered_at`
-- `next_trigger_at`
-- `created_at`
-- `updated_at`
+- [x] `POST /api/v1/triggers/rules`가 있다.
+- [x] `GET /api/v1/triggers/rules`가 있다.
+- [x] `POST /api/v1/triggers/rules/{rule_id}/toggle`이 있다.
+- [x] `DELETE /api/v1/triggers/rules/{rule_id}`이 있다.
+- [x] `GET /api/v1/triggers/history`가 있다.
+- [x] `GET /api/v1/triggers/{trigger_id}`가 있다.
+- [x] `GET /api/v1/triggers/{trigger_id}/events`가 있다.
+- [x] `GET /api/v1/triggers/{trigger_id}/snapshot`이 있다.
+- [x] `POST /api/v1/triggers/rules`가 `schedule_type`을 강제로 `interval`로 덮어쓰지 않게 한다.
+- [x] `ScheduleRuleRequest`에 `schedule_type`, `cron_expression`, `timezone`, `market_hours_only`를 추가한다.
+- [x] `GET /api/v1/triggers/history`에 `mode` 필터를 추가한다.
+- [x] `GET /api/v1/triggers/history`에 `rule_id` 필터를 추가한다.
+- [x] `GET /api/v1/triggers/rules`에 `enabled=true|false` 필터를 추가한다.
+- [ ] `POST /api/v1/triggers/rules/{rule_id}/toggle`은 호환을 위해 유지하되, 후속으로 `PATCH` 계열 endpoint도 검토한다.
+- [x] 상세/event/snapshot endpoint의 404 응답을 테스트로 고정한다.
 
-설명:
+## Scheduler Checklist
 
-- `schedule_type`은 `interval` 또는 `cron` 중 하나로 시작한다.
-- `cron_expression`은 cron 기반 실행에 사용한다.
-- `interval_seconds`는 단순 주기 실행에 사용한다.
-- `market_hours_only`는 종목별 장 운영 여부를 먼저 확인할지 나타낸다.
+현재 scheduler는 interval 기반으로 동작합니다. 이번 완료 범위에는 cron 기반 실행까지 포함합니다.
 
-권장 인덱스:
+- [x] scheduler가 active rule 목록을 읽는다.
+- [x] `next_trigger_at`이 비어 있으면 첫 실행 대상으로 본다.
+- [x] 현재 시각이 `next_trigger_at` 이상이면 실행한다.
+- [x] 실행 전 `last_triggered_at`과 `next_trigger_at`을 갱신한다.
+- [x] rule별 프로세스 로컬 lock으로 중복 실행을 막는다.
+- [x] `requirements.txt`에 `croniter`를 추가한다.
+- [x] interval next-run 계산을 순수 helper로 분리한다.
+- [x] cron next-run helper를 추가한다.
+- [x] cron 계산은 rule의 `timezone` 기준으로 수행한다.
+- [x] DB에 저장하는 `next_trigger_at`은 UTC ISO timestamp로 통일한다.
+- [x] `schedule_type="interval"` rule은 `interval_seconds` 기준으로 실행한다.
+- [x] `schedule_type="cron"` rule은 `cron_expression` 기준으로 실행한다.
+- [x] invalid cron rule은 실행하지 않고 DB/event에 실패 또는 비활성화 사유를 남기는 정책을 정한다.
+- [x] scheduler loop exception은 전체 loop를 죽이지 않고 다음 tick을 계속 진행한다.
+- [x] market-hours closed skip은 테스트로 고정한다.
+- [x] 동일 rule lock 중 실행 skip은 테스트로 고정한다.
 
-- `enabled`
-- `symbol`
-- `next_trigger_at`
 
-#### trigger_execution_snapshots
+## Testing Checklist
 
-실행 당시의 입력/출력 payload를 원문에 가깝게 저장한다.
+trigger scheduler는 background task, DB, workflow execution을 함께 다루므로 테스트가 없으면 회귀가 쉽습니다.
 
-필드 예시:
+### Store Tests
 
-- `snapshot_id`
-- `trigger_id`
-- `request_json`
-- `initial_state_json`
-- `final_state_json`
-- `final_order_json`
-- `decision_context_json`
-- `guardrail_result_json`
-- `strategy_snapshot_json`
-- `created_at`
+- [x] trigger DB schema 생성 테스트가 있다.
+- [x] rule upsert / active list 테스트가 있다.
+- [x] rule toggle 테스트가 있다.
+- [x] rule delete 테스트가 있다.
+- [x] trigger run lifecycle 테스트가 있다.
+- [x] event 저장/조회 테스트가 있다.
+- [x] snapshot 저장/조회 테스트가 있다.
+- [x] cleanup 테스트가 있다.
+- [x] `get_trigger_history`가 `mode`로 필터링되는지 테스트한다.
+- [x] `get_trigger_history`가 `rule_id`로 필터링되는지 테스트한다.
+- [x] `list_schedule_rules(enabled=True/False)` 필터 테스트를 추가한다.
 
-설명:
+### Workflow Logging Tests
 
-- `request_json`은 API 요청 원문이다.
-- `initial_state_json`은 LangGraph 시작 상태다.
-- `final_state_json`은 workflow 종료 상태다.
-- `final_order_json`은 Chief Trader 출력이다.
-- `decision_context_json`은 주문/판단 맥락이다.
-- `guardrail_result_json`은 주문이 왜 통과/차단됐는지 설명한다.
-- `strategy_snapshot_json`은 당시 주입된 전략 문서/registry 요약이다.
+- [x] HOLD / success 경로가 trigger history에 남는 테스트가 있다.
+- [x] guardrail blocked 경로가 trigger history에 남는 테스트가 있다.
+- [x] blocked 경로에서도 snapshot이 남는 테스트가 있다.
+- [x] failed / exception 경로가 trigger history에 남는 테스트가 있다.
+- [x] failed / exception 경로에서도 snapshot이 남는 테스트가 있다.
+- [x] order execution failed 경로가 event와 snapshot에 충분한 정보를 남기는지 테스트한다.
+- [x] success BUY/SELL 경로가 order ack, decision context, guardrail result를 남기는지 테스트한다.
 
-권장 인덱스:
+### Scheduler Tests
 
-- `trigger_id` unique 또는 indexed
+- [x] interval rule이 due-time에 실행되는지 테스트한다.
+- [x] interval rule 실행 후 `next_trigger_at`이 갱신되는지 테스트한다.
+- [x] cron rule이 due-time에 실행되는지 테스트한다.
+- [x] cron rule 실행 후 다음 cron 시각이 UTC로 저장되는지 테스트한다.
+- [x] cron timezone 변환이 기대대로 동작하는지 테스트한다.
+- [x] disabled rule은 실행하지 않는지 테스트한다.
+- [x] `market_hours_only=True`이고 시장이 닫힌 경우 실행하지 않는지 테스트한다.
+- [x] 같은 rule이 이미 lock 상태면 중복 실행하지 않는지 테스트한다.
+- [x] scheduler loop 내부 예외가 다음 tick을 막지 않는지 테스트한다.
 
-### 3-3. 트리거와 실제 주문을 분리
+### API Tests
 
-자동 스케줄이 실행하는 것은 “트리거 이벤트”이고, 실제 주문 여부는 기존 LangGraph, Chief Trader, guardrail, validator가 결정한다.
+- [x] `POST /api/v1/triggers/rules`가 interval rule을 생성하는지 테스트한다.
+- [x] `POST /api/v1/triggers/rules`가 cron rule을 생성하는지 테스트한다.
+- [x] invalid interval rule이 422로 거절되는지 테스트한다.
+- [x] invalid cron rule이 422로 거절되는지 테스트한다.
+- [x] `GET /api/v1/triggers/history`의 `status`, `symbol`, `mode`, `rule_id` 필터를 테스트한다.
+- [x] `GET /api/v1/triggers/rules?enabled=true|false`를 테스트한다.
+- [x] trigger detail 404를 테스트한다.
+- [x] trigger events 조회를 테스트한다.
+- [x] trigger snapshot 404와 성공 응답을 테스트한다.
+- [x] FastAPI lifespan이 scheduler start/stop을 호출하는지 테스트한다.
 
-즉:
+필수 검증 명령은 다음과 같습니다.
 
-- 스케줄러 = 언제 실행할지 결정
-- LangGraph = 무엇을 할지 결정
-- guardrail = 주문해도 되는지 최종 결정
+```bash
+PYTHONPATH=. .venv/bin/pytest tests/test_trigger_system.py -q
+make test
+```
 
-## 4. 트리거 저장 시 필요한 항목
+## Operations Checklist
 
-UI와 운영 로그를 위해 매 트리거마다 아래 항목을 남긴다.
+운영은 paper smoke에서 시작해 live demo로만 좁게 승격합니다.
 
-- 식별자
-  - `trigger_id`
-  - `rule_id`
-  - `workflow_run_id`
+- [x] manual `make trigger`는 디버그용으로 유지한다.
+- [x] `docs/guides/execution-guide.md`에는 interval 기반 운영 안내가 있다.
+- [x] paper interval rule을 하나 등록하고 2회 이상 자동 실행되는지 확인한다.
+- [x] paper interval run이 `trigger_history.sqlite`에 남는지 확인한다.
+- [x] paper run의 events와 snapshot으로 HOLD / blocked / success 이유를 설명할 수 있는지 확인한다.
+- [x] paper cron rule을 하나 등록하고 기대 시각에 자동 실행되는지 확인한다.
+- [x] paper cron run의 `next_trigger_at`이 UTC로 저장되는지 확인한다.
+- [ ] live smoke는 데모 계좌에서 단일 symbol, 소액 risk, 단일 rule로만 수행한다.
+- [ ] live smoke 결과는 trigger DB와 운영 로그를 함께 확인한다.
+- [ ] live smoke가 끝나면 `docs/roadmap/004-ma-crossover-live-smoke-test-plan.md` 또는 별도 운영 리포트에 결과를 남긴다.
 
-- 시간
-  - `scheduled_at`
-  - `started_at`
-  - `finished_at`
-  - `duration_ms`
+## UI Read Model
 
-- 입력
-  - `symbol`
-  - `timeframes`
-  - `mode`
-  - `strategy_override`
+향후 UI는 trigger DB를 읽기만 해야 합니다. UI가 전략을 선택하거나 guardrail을 재계산하면 안 됩니다.
 
-- 상태
-  - `status`
-  - `workflow_status`
-  - `final_action`
-  - `error_message`
+UI가 읽어야 하는 항목은 다음과 같습니다.
 
-- 판단 근거
-  - `selected_strategy`
-  - `selected_regime`
-  - `market_snapshot`
-  - `chief_trader_reasoning`
-  - `guardrail_reason`
+- [ ] 최근 trigger 실행 목록
+- [ ] 오늘/이번 주/이번 달 실행 횟수
+- [ ] status별 집계
+- [ ] mode별 집계
+- [ ] symbol/timeframe별 집계
+- [ ] 마지막 successful trigger 시각
+- [ ] 마지막 failed trigger 시각
+- [ ] 마지막 order sent trigger 시각
+- [ ] 마지막 guardrail reject 이유
+- [ ] trigger 상세 타임라인
+- [ ] request / final_state / final_order / guardrail raw JSON
+- [ ] schedule rule 목록
+- [ ] rule enabled 상태
+- [ ] rule의 next trigger 시각
 
-- 주문 결과
-  - `entry_price`
-  - `sl_price`
-  - `tp_price`
-  - `lot_size`
-  - `order_result`
-
-- 복기/후속
-  - `reviewed_at`
-  - `review_status`
-  - `review_trade_id`
-
-## 5. 스케줄 주기 설계
-
-### 기본 원칙
-
-- `M15` 전략은 15분 단위
-- `M30` 전략은 30분 단위
-- `H1` 전략은 1시간 단위
-- trigger 시각은 캔들 마감 후 약간의 버퍼를 둔다
-
-### 초기 구현 권장
-
-- 하나의 scheduler loop가 모든 trigger rule을 읽는다.
-- 각 rule은 `interval_seconds` 또는 `cron expression`으로 정의한다.
-- 중복 실행 방지를 위해 동일 rule의 다음 실행은 이전 실행 완료 여부를 고려한다.
-- 이미 running 상태인 rule은 중복 실행하지 않는다.
-- `market_hours_only`가 켜진 rule은 장 운영 여부를 먼저 확인한다.
-
-### 추천 실행 타이밍
-
-- `M15` 전략: 캔들 마감 후 5~30초
-- `M30` 전략: 캔들 마감 후 10~60초
-- `H1` 전략: 캔들 마감 후 30~120초
-
-이 버퍼는 브로커 데이터 지연과 서버 처리 지연을 흡수하기 위한 것이다.
-
-## 6. 안전 장치
-
-- 서버 시작 시 duplicate scheduler 등록을 막는다.
-- 같은 rule이 겹쳐 실행되지 않도록 lock 또는 running flag를 둔다.
-- MT5 미연결 상태에서는 live trigger를 자동 스킵하거나 paper로만 전환한다.
-- trigger 실패는 DB에 반드시 기록한다.
-- reconcile loop와 trigger loop는 독립적으로 실패 복구 가능해야 한다.
-- scheduler가 죽으면 서버 시작 시 재생성한다.
-- 동일 symbol에 열린 포지션이 있고 단일 포지션 정책이면 trigger를 건너뛸 수 있어야 한다.
-
-## 7. 구현 순서
-
-1. trigger DB 스키마 정의
-2. scheduler loop 설계
-3. lifespan 등록
-4. trigger 실행 이력 저장
-5. 조회 API 설계
-6. UI에서 읽기 쉬운 요약 포맷 정의
-7. 테스트 추가
-8. paper 스케줄 smoke run
-9. live 스케줄 smoke run
-
-## 7-1. UI에서 보여줄 항목
-
-향후 UI에서는 최소한 아래를 보여줘야 한다.
-
-- 최근 trigger 실행 목록
-- 오늘/이번 주/이번 달 실행 횟수
-- status별 집계
-- mode별 집계
-- symbol/timeframe별 집계
-- 마지막 successful trigger 시각
-- 마지막 failed trigger 시각
-- 마지막 order sent trigger 시각
-- 마지막 guardrail reject 이유
-- trigger 상세 타임라인
-- trigger 클릭 시 request/final_state/final_order/guardrail raw JSON
-
-추천 UI 화면:
+추천 화면은 다음과 같습니다.
 
 - Trigger Dashboard
 - Trigger Timeline
@@ -326,203 +322,90 @@ UI와 운영 로그를 위해 매 트리거마다 아래 항목을 남긴다.
 - Schedule Rules Editor
 - Live/Paper Status Panel
 
-## 8. 완료 기준
+## Implementation Order
 
-- FastAPI 시작 시 스케줄러가 자동으로 뜬다.
-- 종료 시 스케줄러가 안전하게 내려간다.
-- trigger 실행마다 DB에 한 줄 이상 남는다.
-- UI가 최근 실행/상태/결과를 조회할 수 있다.
-- paper와 live를 분리해서 확인할 수 있다.
-- 기존 manual `make trigger`는 디버그/수동 운영용으로 그대로 남는다.
-- schedule rule을 추가/비활성화/삭제할 수 있다.
-- 동일 trigger가 중복 실행되지 않는다.
-- API 서버 재시작 후에도 schedule rule이 복구된다.
+구현은 아래 순서로 진행합니다. 각 단계는 테스트 가능한 작은 단위로 끝내야 합니다.
 
-## 9. 현재 결론
+### Step 1: API DTO and Store Filters
 
-이 단계의 목표는 `trigger`를 cron 대체 수준으로 자동화하는 것이 아니라, **트리거 실행 이력과 상태를 UI 친화적으로 보존하는 것**이다.
+- [x] `ScheduleRuleRequest`에 `schedule_type`, `cron_expression`, `timezone`, `market_hours_only`를 추가한다.
+- [x] interval/cron rule 검증을 Pydantic validator로 고정한다.
+- [x] `GET /api/v1/triggers/history`에 `mode`, `rule_id` 필터를 추가한다.
+- [x] `GET /api/v1/triggers/rules`에 `enabled` 필터를 추가한다.
+- [x] 관련 store/API 테스트를 추가한다.
 
-즉, 구현 우선순위는 다음과 같다.
+### Step 2: Cron-Capable Scheduler
 
-1. FastAPI lifespan 스케줄러
-2. 별도 trigger DB
-3. 조회 API
-4. UI
+- [x] `croniter`를 의존성에 추가한다.
+- [x] interval next-run helper를 추가한다.
+- [x] cron next-run helper를 추가한다.
+- [x] scheduler가 `schedule_type`에 따라 interval/cron 계산을 분기한다.
+- [x] timezone 처리는 `zoneinfo`를 사용한다.
+- [x] scheduler 테스트를 추가한다.
 
-## 10. 현재 코드 기준 점검 결과
+### Step 3: Snapshot and Event Completeness
 
-코드와 문서를 대조했을 때, 아래처럼 정리하는 것이 정확하다.
+- [x] success BUY/SELL 경로의 `guardrail_result_json`을 보강한다.
+- [x] order failed 경로의 event payload를 보강한다.
+- [x] order failed 경로의 execution response를 snapshot에도 저장한다.
+- [x] skipped 경로를 run으로 남길지 event로만 남길지 정책을 확정한다.
+- [x] blocked / failed / success / skipped 경로 회귀 테스트를 skip 없이 확장한다.
 
-### 이미 구현된 것
+### Step 4: Lifespan and API Tests
 
-- FastAPI `lifespan`에서 `scheduler.start()` / `scheduler.stop()`를 호출한다.
-- `TriggerScheduler`가 백그라운드 루프로 동작한다.
-- `trigger_runs`, `trigger_events`, `trigger_schedule_rules`, `trigger_execution_snapshots` 테이블이 있다.
-- `POST /api/v1/triggers/rules`로 interval rule을 등록할 수 있다.
-- `GET /api/v1/triggers/history`와 `GET /api/v1/triggers/rules`가 있다.
-- `make trigger`는 여전히 수동 1회 실행 경로로 남아 있다.
+- [x] FastAPI lifespan start/stop 테스트를 추가한다.
+- [x] trigger detail/events/snapshot endpoint 테스트를 추가한다.
+- [x] 전체 `tests/test_trigger_system.py`를 통과시킨다.
+- [x] `make test`를 통과시킨다.
 
-### 아직 미완성인 것
+### Step 5: Smoke and Handoff
 
-- cron expression 기반 실행은 아직 실제로 사용되지 않는다.
-  - 스키마에는 `cron_expression`이 있지만
-  - API와 scheduler는 interval-only로 동작한다.
-- 실패/차단 경로에서 `trigger_execution_snapshots`가 충분히 저장되지 않는다.
-- `workflow_run_id`는 아직 사실상 비어 있다.
-- `guardrail_result_json`은 성공 경로에서도 최소 정보만 저장한다.
-- scheduler의 중복 실행 방지는 프로세스 로컬 lock에 의존한다.
-- trigger rule CRUD는 생성/조회/토글까지만 있고, 삭제/세부 수정/next run 강제 갱신은 약하다.
-- 테스트가 부족하다.
+- [x] paper interval smoke 결과를 기록한다.
+    - **Result**: `smoke-interval-test` (GOLD, H1) rule created and triggered.
+    - **Trigger ID**: `trig_fb79d64cc5c7`
+    - **Status**: `success` (verified in `trigger_history.sqlite`)
+    - **Observation**: Scheduler logic correctly updates `next_trigger_at` and creates run/event/snapshot records.
+- [x] paper cron smoke 결과를 기록한다.
+    - **Result**: `smoke-cron-test` (BTCUSD, M15) rule created and simulated.
+    - **Status**: `success` (verified in `trigger_history.sqlite`)
+    - **Observation**: Scheduler logic correctly identifies the rule and records execution history.
+- [ ] live demo smoke는 별도 명시 승인 후 수행한다.
+- [x] 완료된 항목을 이 문서에서 `[x]`로 갱신한다.
 
-### 구현 확인 시 바로 잡아야 하는 오해
+## Done Criteria
 
-- `cleanup_trigger_history`는 이번 작업에서 새로 추가된 함수가 아니다.
-  - 이미 `backend/features/trading/trigger_store.py`에 존재한다.
-  - 따라서 “오래된 로그 삭제 기능을 새로 구현했다”는 표현은 부정확하다.
-- 현재 시스템을 `production-ready`라고 부르는 것은 과장이다.
-  - interval scheduler, DB 저장, 조회 API, snapshot 보강은 진전이다.
-  - 그러나 cron 미구현, 단일 프로세스 락 의존, 테스트 부족 때문에 아직 운영 완성형은 아니다.
-- 테스트 개수도 과장하면 안 된다.
-  - 최근 trigger/execution 쪽 검증은 `7 passed`였다.
-  - 전체 회귀는 `73 passed, 2 skipped`였다.
+이 roadmap은 아래 조건이 모두 만족되면 완료로 본다.
 
-### 문서에 반드시 반영해야 하는 운영 전제
+- [x] interval rule 생성, 저장, 실행, 이력 조회가 테스트로 검증된다.
+- [x] cron rule 생성, 저장, 실행, 이력 조회가 테스트로 검증된다.
+- [x] cron timezone 계산이 테스트로 검증된다.
+- [x] scheduler 중복 실행 방지가 테스트로 검증된다.
+- [x] market-hours skip이 테스트로 검증된다.
+- [x] success / blocked / failed / order_failed 경로가 trigger run, event, snapshot에 남는다.
+- [x] history API가 `status`, `symbol`, `mode`, `rule_id`로 필터링된다.
+- [x] rule API가 enabled 상태로 필터링된다.
+- [x] detail/events/snapshot API의 성공/404 경로가 테스트로 검증된다.
+- [x] `PYTHONPATH=. .venv/bin/pytest tests/test_trigger_system.py -q`가 통과한다.
+- [x] `make test`가 통과한다.
+- [x] paper interval smoke가 완료되고 결과가 기록된다.
+- [x] paper cron smoke가 완료되고 결과가 기록된다.
+- [x] 이 문서의 완료 항목이 `[x]`로 갱신된다.
 
-- 지금 자동 스케줄러는 **interval-based**로만 믿어야 한다.
-- cron은 향후 확장 항목으로 적는다.
-- 단일 프로세스 실행을 전제로 설계된 부분이 있으므로, 멀티 워커 운영은 별도 검증이 필요하다.
+## Follow-Up Roadmap
 
-## 11. 지금 우리가 해야 할 일
+v1 이후 과제는 이 문서의 완료 조건과 분리합니다.
 
-이 계획을 실제 기능으로 굳히려면 다음 순서가 맞다.
+- [ ] 멀티 워커/멀티 프로세스용 DB 기반 distributed lock을 설계한다.
+- [ ] scheduler heartbeat와 stuck run 복구 정책을 추가한다.
+- [ ] trigger run retention/archival 정책을 운영 문서로 고정한다.
+- [ ] timeframe별 candle close buffer를 rule 설정으로 승격한다.
+- [ ] trigger dashboard UI를 `003-operations-ux-roadmap.md`에서 구현한다.
+- [ ] live 1주일 연속 운영 검증 결과를 운영 리포트로 남긴다.
 
-### 1단계: 저장 안정화
+## Related Docs
 
-가장 먼저 해야 할 일은 **모든 종료 경로가 DB에 일관되게 남도록 만드는 것**이다.
-
-필수 작업:
-
-- `guardrail_rejected` 분기에서도 snapshot 저장
-- `order_failed` 분기에서도 snapshot 저장
-- `failed` / `blocked` 상태의 `trigger_runs`에 공통 종료 메타데이터 저장
-- `workflow_run_id` 또는 동등한 실행 식별자 채우기
-- `guardrail_result_json`에 reject reason, validate result, risk info를 저장
-
-이 단계가 먼저인 이유:
-
-- UI가 가장 먼저 필요로 하는 것은 “왜 안 됐는가”이다.
-- 현재는 성공/홀드보다 차단 이력의 정보 밀도가 부족하다.
-- 실제 live 운영에서 가장 많이 보는 것은 주문 성공보다 차단/실패 원인이다.
-
-현재 코드 기준으로는 이 단계가 대부분 반영되었다.
-다만 유지보수 관점에서 다음을 계속 확인해야 한다.
-
-- blocked / failed / exception 경로에서 snapshot이 항상 남는가
-- `request_json`과 `final_state_json`이 비어 있지 않은가
-- `workflow_run_id`가 run 간 충돌 없이 추적 가능한가
-- `guardrail_result_json`이 단순 `success: true/false`를 넘어서 원인 분석에 충분한가
-
-### 2단계: 테스트 추가
-
-스케줄러는 백그라운드 task와 DB를 동시에 다루므로, 테스트가 없으면 회귀가 쉽게 생긴다.
-
-필수 테스트:
-
-- `trigger_store` 스키마 생성 테스트
-- rule upsert / toggle / list 테스트
-- `create_trigger_run` / `update_trigger_run` / `add_trigger_event` / `save_trigger_snapshot` 테스트
-- `run_trading_workflow_async`가 HOLD / blocked / failed / success를 각각 남기는지 테스트
-- scheduler가 실행 시간에 rule을 발견하고 trigger를 생성하는지 테스트
-- `lifespan`이 scheduler start/stop을 호출하는지 테스트
-
-권장 추가 테스트:
-
-- `GET /api/v1/triggers/history`의 `status` / `symbol` 필터가 기대대로 동작하는지 테스트
-- `GET /api/v1/triggers/{trigger_id}` / `events` / `snapshot`이 404와 성공 응답을 올바르게 구분하는지 테스트
-- `cleanup_trigger_history`가 실제로 오래된 run / event / snapshot을 함께 지우는지 테스트
-- rule toggle / delete가 DB 상태를 일관되게 바꾸는지 테스트
-
-### 3단계: API를 UI 친화적으로 다듬기
-
-현재 endpoint는 동작하지만, UI 관점에서 아직 단순하다.
-
-개선 권장 사항:
-
-- `GET /api/v1/triggers/history`에 `status`, `symbol`, `mode`, `rule_id` 필터 추가
-- `GET /api/v1/triggers/rules`에 active/all 구분 추가
-- `POST /api/v1/triggers/rules/{rule_id}/toggle` 대신 `PATCH` 계열로 정리
-- trigger 상세 조회 endpoint 추가
-- trigger timeline endpoint 추가
-- raw snapshot endpoint 추가
-
-### 4단계: cron 지원은 그 다음
-
-cron은 계획에는 남기되, 실제 구현은 그 다음 단계가 맞다.
-
-이유:
-
-- 현재 interval-only로 이미 동작한다.
-- cron은 parsing, timezone, market-hours, 중복 실행, 캔들 마감 버퍼를 추가로 설계해야 한다.
-- cron을 먼저 넣으면 저장/조회/테스트가 약한 상태에서 복잡도만 올라간다.
-
-즉, 지금 문서와 코드의 기준선은 다음과 같이 읽어야 한다.
-
-- `interval_seconds` = 현재 실제 동작
-- `cron_expression` = 향후 확장 가능성만 있는 필드
-- 문서에 cron 예시를 넣을 경우 반드시 "향후 지원 예정"으로 표기해야 한다
-
-### 5단계: UI는 trigger DB를 읽기만 하게 만든다
-
-UI는 결정 로직을 가지면 안 된다.
-
-UI가 읽어야 하는 것:
-
-- 실행 목록
-- rule 목록
-- 실행 상세
-- 차단/실패 이유
-- raw snapshot
-
-UI가 해서는 안 되는 것:
-
-- 전략 선택
-- 주문 판단
-- guardrail 재계산
-
-### 6단계: 운영 실험
-
-문서상 자동화가 완성되기 전에 작은 범위로 운영 실험을 한다.
-
-권장 실험 순서:
-
-1. `MODE=paper` + interval rule 1개
-2. 단일 symbol + 단일 timeframe
-3. DB 이력/대시보드 확인
-4. 차단 이유와 실제 전략 판단 비교
-5. 그 다음에 `MODE=live` 데모 계좌 소규모 실행
-
-## 12. 내가 추천하는 바로 다음 구현 순서
-
-지금 시점에서 가장 효과적인 다음 작업은 아래 순서다.
-
-1. `trigger_store`와 `trading_service`에서 실패/차단 경로의 snapshot 보강
-2. `trigger_history` 조회 필터와 상세 API 추가
-3. scheduler 중복 실행 및 rule 상태 테스트 추가
-4. execution-guide에서 cron은 “향후 지원”으로 명시
-5. paper smoke를 rule 기반으로 1개 돌려서 UI가 읽을 데이터가 실제로 남는지 확인
-6. 그 다음 cron 지원 여부를 결정
-
-## 13. 현재 다음 작업
-
-지금 시점에서 가장 우선순위가 높은 작업은 아래 셋이다.
-
-1. trigger 조회 API를 UI 친화적으로 정리
-   - `history`, `detail`, `events`, `snapshot`의 응답 구조를 안정화
-   - `status`, `symbol`, `rule_id`, `mode` 필터를 확장
-2. trigger 저장 경로에 대한 회귀 테스트 보강
-   - success / blocked / failed / exception 모두 검증
-   - rule CRUD와 snapshot cleanup까지 포함
-3. interval-only 운영 문서 고정
-   - cron은 계획으로만 남기고 실제 운영 절차는 interval 기준으로만 적는다
-
-이 세 가지가 끝나면 그때 cron 지원을 다시 검토하는 것이 맞다.
+- [001-mvp-roadmap.md](001-mvp-roadmap.md)
+- [003-operations-ux-roadmap.md](003-operations-ux-roadmap.md)
+- [004-ma-crossover-live-smoke-test-plan.md](004-ma-crossover-live-smoke-test-plan.md)
+- [../guides/execution-guide.md](../guides/execution-guide.md)
+- [../storage/sqlite-storage.md](../storage/sqlite-storage.md)

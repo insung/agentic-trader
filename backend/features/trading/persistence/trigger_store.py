@@ -125,11 +125,17 @@ def get_active_schedule_rules(db_path: Optional[str] = None) -> List[Dict[str, A
         cursor = conn.execute("SELECT * FROM trigger_schedule_rules WHERE enabled = 1")
         return [dict(row) for row in cursor.fetchall()]
 
-def list_schedule_rules(db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+def list_schedule_rules(db_path: Optional[str] = None, enabled: Optional[bool] = None) -> List[Dict[str, Any]]:
     init_trigger_db(db_path)
+    query = "SELECT * FROM trigger_schedule_rules"
+    params = []
+    if enabled is not None:
+        query += " WHERE enabled = ?"
+        params.append(1 if enabled else 0)
+    
     with _connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        cursor = conn.execute("SELECT * FROM trigger_schedule_rules")
+        cursor = conn.execute(query, tuple(params))
         return [dict(row) for row in cursor.fetchall()]
 
 def set_schedule_rule_enabled(
@@ -334,6 +340,8 @@ def get_trigger_history(
     limit: int = 50, 
     status: Optional[str] = None, 
     symbol: Optional[str] = None,
+    mode: Optional[str] = None,
+    rule_id: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ) -> List[Dict[str, Any]]:
@@ -348,6 +356,12 @@ def get_trigger_history(
     if symbol:
         conditions.append("symbol = ?")
         params.append(symbol)
+    if mode:
+        conditions.append("mode = ?")
+        params.append(mode)
+    if rule_id:
+        conditions.append("rule_id = ?")
+        params.append(rule_id)
     if start_date:
         conditions.append("scheduled_at >= ?")
         params.append(start_date)

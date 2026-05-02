@@ -46,8 +46,8 @@ def fetch_data_node(state: AgentState) -> Dict[str, Any]:
     timeframes = getattr(state, "timeframes", ["M5"])
     
     # 시장 휴장 체크
-    if not is_market_open():
-        msg = get_market_status_message()
+    if not is_market_open(symbol=symbol):
+        msg = get_market_status_message(symbol=symbol)
         print(f"🚫 {msg}")
         return {"raw_data": "", "error_flag": True, "error_message": msg}
     

@@ -164,7 +164,8 @@ async def run_trading_workflow_async(
         risk_per_trade_pct = float(os.environ.get("RISK_PER_TRADE_PCT", "0.005"))
         
         # Price Direction & R/R Guardrail
-        if not validate_order_prices(action, entry_price, sl, tp):
+        price_ok = validate_order_prices(action, entry_price, sl, tp)
+        if not price_ok:
             reject_reason = f"Invalid SL/TP or Risk/Reward (entry={entry_price}, sl={sl}, tp={tp})"
             add_trigger_event(None, trigger_id, "guardrail_rejected", message=reject_reason)
             finalize_run(status="blocked", final_action=action, error_message=reject_reason, guardrail_result={
@@ -203,7 +204,20 @@ async def run_trading_workflow_async(
         )
         
         order_result_data = {}
+        safe_lot = 0.0
         if mode == "live":
+            # In live mode, usecase does the risk calculation internally, but we can pre-check
+            safe_lot = enforce_one_percent_rule(account_balance, entry_price, sl, risk_pct=risk_per_trade_pct)
+            if safe_lot <= 0:
+                reject_reason = f"Risk management blocked LIVE order: safe lot calculated to {safe_lot}"
+                add_trigger_event(None, trigger_id, "guardrail_rejected", message=reject_reason)
+                finalize_run(status="blocked", final_action=action, error_message=reject_reason, guardrail_result={
+                    "type": "risk_guardrail",
+                    "success": False,
+                    "message": reject_reason
+                })
+                return
+
             add_trigger_event(None, trigger_id, "order_submitted", message="Submitting LIVE order")
             usecase = TradeExecutionUseCase(MT5Client())
             result = usecase.execute_trade(
@@ -233,11 +247,12 @@ async def run_trading_workflow_async(
                 "ticket": result.get("order"),
                 "executed_price": result.get("price"),
                 "timestamp": result.get("time") or datetime.now(timezone.utc).isoformat(),
+                "raw_response": result
             }
             order.lot_size = safe_lot
 
         if order_result_data.get("success"):
-            add_trigger_event(None, trigger_id, "order_acked", message=f"Order success: ticket {order_result_data.get('ticket')}")
+            add_trigger_event(None, trigger_id, "order_acked", message=f"Order success: ticket {order_result_data.get('ticket')}", payload=order_result_data)
             decision_context = build_decision_context(final_state, order_result_data)
             track_open_position(
                 mode=mode,
@@ -251,11 +266,33 @@ async def run_trading_workflow_async(
                 decision_context=decision_context,
             )
             final_state["decision_context"] = decision_context
-            finalize_run(status="success", final_action=action, guardrail_result={"success": True})
+            finalize_run(
+                status="success", 
+                final_action=action, 
+                guardrail_result={
+                    "type": "all_pass",
+                    "success": True,
+                    "details": {
+                        "price_guardrail": {"success": True, "entry": entry_price, "sl": sl, "tp": tp},
+                        "strategy_validator": {"success": True, "reason": setup_reason},
+                        "risk_guardrail": {"success": True, "lot": safe_lot}
+                    }
+                }
+            )
         else:
             err = order_result_data.get("error_message") or "Unknown execution error"
-            add_trigger_event(None, trigger_id, "order_failed", message=err)
-            finalize_run(status="failed", final_action=action, error_message=err)
+            add_trigger_event(None, trigger_id, "order_failed", message=err, payload=order_result_data)
+            finalize_run(
+                status="failed", 
+                final_action=action, 
+                error_message=err,
+                guardrail_result={
+                    "type": "execution_error",
+                    "success": False,
+                    "message": err,
+                    "execution_details": order_result_data
+                }
+            )
 
     except Exception as e:
         err_msg = str(e)

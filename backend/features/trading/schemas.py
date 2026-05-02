@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class HealthResponse(BaseModel):
@@ -47,6 +47,31 @@ class ScheduleRuleRequest(BaseModel):
     symbol: str
     timeframes: List[str]
     mode: str = "paper"
-    interval_seconds: int = 900
+    schedule_type: str = "interval"
+    cron_expression: Optional[str] = None
+    interval_seconds: Optional[int] = 900
+    timezone: str = "UTC"
+    market_hours_only: bool = True
     strategy_override: Optional[str] = None
     enabled: bool = True
+
+    @field_validator("schedule_type")
+    @classmethod
+    def validate_schedule_type(cls, v):
+        if v not in ["interval", "cron"]:
+            raise ValueError("schedule_type must be 'interval' or 'cron'")
+        return v
+
+    @field_validator("interval_seconds")
+    @classmethod
+    def validate_interval(cls, v, info):
+        if info.data.get("schedule_type") == "interval" and (v is None or v <= 0):
+            raise ValueError("interval_seconds must be > 0 for interval type")
+        return v
+
+    @field_validator("cron_expression")
+    @classmethod
+    def validate_cron(cls, v, info):
+        if info.data.get("schedule_type") == "cron" and not v:
+            raise ValueError("cron_expression is required for cron type")
+        return v

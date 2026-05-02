@@ -1,8 +1,12 @@
 import asyncio
 import os
 import json
+import logging
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Any, Optional
+from zoneinfo import ZoneInfo
+
+from croniter import croniter
 
 from backend.features.trading.persistence.trigger_store import (
     get_active_schedule_rules,
@@ -12,6 +16,38 @@ from backend.features.trading.persistence.trigger_store import (
 )
 from backend.services.trading_service import run_trading_workflow_async
 from backend.features.trading.market_hours import is_market_open
+
+logger = logging.getLogger(__name__)
+
+def get_next_interval_time(last_triggered_at_iso: Optional[str], interval_seconds: int) -> datetime:
+    """Calculates next trigger time for interval rules."""
+    if not last_triggered_at_iso:
+        return datetime.now(timezone.utc)
+    
+    last_dt = datetime.fromisoformat(last_triggered_at_iso)
+    if last_dt.tzinfo is None:
+        last_dt = last_dt.replace(tzinfo=timezone.utc)
+        
+    return last_dt + timedelta(seconds=interval_seconds)
+
+def get_next_cron_time(cron_expression: str, tz_name: str = "UTC", now: Optional[datetime] = None) -> Optional[datetime]:
+    """Calculates next trigger time for cron rules."""
+    try:
+        tz = ZoneInfo(tz_name)
+        if now is None:
+            now = datetime.now(tz)
+        else:
+            if now.tzinfo is None:
+                now = now.replace(tzinfo=timezone.utc)
+            now = now.astimezone(tz)
+            
+        iter = croniter(cron_expression, now)
+        next_dt = iter.get_next(datetime)
+        # Convert to UTC for storage
+        return next_dt.astimezone(timezone.utc)
+    except Exception as e:
+        logger.error(f"Error calculating next cron time: {e}")
+        return None
 
 class TriggerScheduler:
     def __init__(self, check_interval: int = 10):
@@ -25,7 +61,7 @@ class TriggerScheduler:
             return
         self.running = True
         self.task = asyncio.create_task(self._loop())
-        print("⏰ Trigger Scheduler started.")
+        logger.info("⏰ Trigger Scheduler started.")
 
     async def stop(self):
         self.running = False
@@ -35,57 +71,85 @@ class TriggerScheduler:
                 await self.task
             except asyncio.CancelledError:
                 pass
-        print("⏰ Trigger Scheduler stopped.")
+        logger.info("⏰ Trigger Scheduler stopped.")
 
     async def _loop(self):
         while self.running:
             try:
                 await self._check_and_trigger()
             except Exception as e:
-                print(f"❌ Error in scheduler loop: {e}")
+                logger.error(f"❌ Error in scheduler loop: {e}")
             await asyncio.sleep(self.check_interval)
 
     async def _check_and_trigger(self):
         rules = get_active_schedule_rules()
         now = datetime.now(timezone.utc)
-        now_iso = now.isoformat()
 
         for rule in rules:
             rule_id = rule["rule_id"]
             
-            # Check if market hours rule applies
-            if rule.get("market_hours_only") and not is_market_open(now):
-                continue
-
-            # Check if it's time to trigger
+            # 1. Check if it's time to trigger
             should_trigger = False
             next_trigger_at = rule.get("next_trigger_at")
             
             if not next_trigger_at:
-                # First time: trigger now or set next
                 should_trigger = True
             else:
                 next_dt = datetime.fromisoformat(next_trigger_at)
+                if next_dt.tzinfo is None:
+                    next_dt = next_dt.replace(tzinfo=timezone.utc)
                 if now >= next_dt:
                     should_trigger = True
 
-            if should_trigger:
-                if self._rule_locks.get(rule_id):
-                    # Still running, skip
+            if not should_trigger:
+                continue
+
+            # 2. Calculate next trigger time for all cases where it was 'due'
+            schedule_type = rule.get("schedule_type", "interval")
+            if schedule_type == "cron":
+                cron_expr = rule.get("cron_expression")
+                if not cron_expr:
+                    logger.warning(f"Rule {rule_id} is cron but has no expression. Skipping.")
                     continue
-                
-                # Calculate next trigger time
-                interval = rule.get("interval_seconds") or 900 # Default 15m
-                # Align to interval if possible (e.g. every 15m of the hour)
-                # For now just simple add
+                new_next_dt = get_next_cron_time(cron_expr, rule.get("timezone", "UTC"))
+            else: # interval
+                interval = rule.get("interval_seconds") or 900
                 new_next_dt = now + timedelta(seconds=interval)
-                new_next_iso = new_next_dt.isoformat()
-                
-                # Update rule in DB
+            
+            if not new_next_dt:
+                logger.error(f"Failed to calculate next trigger for rule {rule_id}. Skipping.")
+                continue
+            
+            new_next_iso = new_next_dt.replace(microsecond=0).isoformat()
+            now_iso = now.replace(microsecond=0).isoformat()
+
+            # 3. Check market hours
+            if rule.get("market_hours_only") and not is_market_open(now, symbol=rule.get("symbol")):
+                # Update next trigger to avoid hot-looping during closed market
                 update_rule_last_triggered(None, rule_id, now_iso, new_next_iso)
-                
-                # Run in background
-                asyncio.create_task(self._execute_rule(rule))
+                logger.debug(f"Rule {rule_id} skipped: market closed. Next trigger set to {new_next_iso}")
+                continue
+
+            # 4. Check lock
+            if self._rule_locks.get(rule_id):
+                # Log a 'skipped' run record for lock
+                update_rule_last_triggered(None, rule_id, now_iso, new_next_iso)
+                trigger_id = create_trigger_run(None, {
+                    "rule_id": rule_id,
+                    "symbol": rule["symbol"],
+                    "timeframes": json.loads(rule["timeframes_json"]),
+                    "mode": rule["mode"],
+                    "status": "skipped",
+                    "error_message": "Previous run still in progress (lock active)",
+                    "scheduled_at": now_iso
+                })
+                add_trigger_event(None, trigger_id, "skipped", message="Skipped due to active lock")
+                logger.warning(f"Rule {rule_id} skipped: lock active. Next trigger set to {new_next_iso}")
+                continue
+            
+            # 5. Update rule and execute
+            update_rule_last_triggered(None, rule_id, now_iso, new_next_iso)
+            asyncio.create_task(self._execute_rule(rule))
 
     async def _execute_rule(self, rule: Dict[str, Any]):
         rule_id = rule["rule_id"]
@@ -106,7 +170,7 @@ class TriggerScheduler:
                 "mode": mode,
                 "strategy_override": strategy_override,
                 "status": "scheduled",
-                "scheduled_at": datetime.now(timezone.utc).isoformat()
+                "scheduled_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat()
             })
             
             add_trigger_event(None, trigger_id, "scheduled", message=f"Triggered by rule: {rule['name']}")
@@ -122,7 +186,7 @@ class TriggerScheduler:
             )
             
         except Exception as e:
-            print(f"❌ Error executing rule {rule_id}: {e}")
+            logger.error(f"❌ Error executing rule {rule_id}: {e}")
             if trigger_id:
                 add_trigger_event(None, trigger_id, "failed", message=str(e))
         finally:

@@ -20,6 +20,7 @@
 
 - [Vision and Philosophy](./architecture/vision-and-philosophy.md)
 - [System Execution Flow](./architecture/system-execution-flow.md)
+- [Trading Execution Flow](./architecture/trading-execution-flow.md)
 - [Agent Workflow Design](./architecture/agent-workflow-design.md)
 - [Safety Guardrails](./architecture/safety-guardrails.md)
 - [AI Trading Reference](./architecture/ai-trading-reference.md)

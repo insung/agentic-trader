@@ -2,16 +2,16 @@
 
 이 디렉터리는 사람이 Agentic Trader를 수동으로 이해하고 조작할 수 있게 만드는 운영 UX 계획을 모읍니다.
 
-`docs/mvp-implementation-plan.md`는 전체 프로젝트의 상위 로드맵이고, 이 디렉터리는 그중 운영 콘솔, 전략 워크벤치, 백테스트 랩, 의사결정 감사 화면의 세부 실행 계획입니다.
+`docs/roadmap/001-mvp-roadmap.md`는 전체 프로젝트의 상위 로드맵이고, 운영 UX 상세 계획은 `docs/roadmap/003-operations-ux-roadmap.md`에서 관리합니다. 이 디렉터리는 UX/API/대시보드 작업을 시작할 때 읽는 안내 색인입니다.
 
 ## 읽는 순서
 
 새 AI 세션이 UX/API/대시보드 작업을 맡으면 아래 순서로 읽습니다.
 
 1. `AGENTS.md`
-2. `docs/mvp-implementation-plan.md`
+2. `docs/roadmap/001-mvp-roadmap.md`
 3. `docs/ux/README.md`
-4. `docs/ux/operations-ux-roadmap.md`
+4. `docs/roadmap/003-operations-ux-roadmap.md`
 5. `docs/storage/sqlite-schema-reference.md`
 6. `backend/config/strategies_config.json`
 7. `backend/features/trading/strategy_validators.py`
@@ -23,7 +23,7 @@
   - LLM 응답 캐시와 deterministic replay는 빠른 반복 UX의 기반입니다.
 - [ ] Phase 6.6은 Strategy Workbench와 Guardrail Center가 참조할 정책 기반입니다.
   - 전략별 파라미터, 최소 표본 수, blocked-trade audit 기준을 정합니다.
-- [ ] Phase 9에서 `docs/ux/operations-ux-roadmap.md`를 따라 실제 API/UI를 구현합니다.
+- [ ] Phase 9에서 `docs/roadmap/003-operations-ux-roadmap.md`를 따라 실제 API/UI를 구현합니다.
   - 먼저 읽기 전용 API를 만들고, 그 다음 최소 UI를 붙입니다.
   - Paper/Live 승격 UI는 마지막 단계입니다.
 
@@ -60,4 +60,4 @@
 
 ## 문서 목록
 
-- [Operations UX Roadmap](./operations-ux-roadmap.md)
+- [Operations UX Roadmap](../roadmap/003-operations-ux-roadmap.md)

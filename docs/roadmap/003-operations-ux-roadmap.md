@@ -9,7 +9,7 @@
 ## 시작 전 확인 순서
 
 - [ ] `AGENTS.md`를 읽고 safety/air-gap, LangGraph, deterministic validator 원칙을 확인합니다.
-- [ ] `docs/mvp-implementation-plan.md`에서 현재 phase와 미완료 항목을 확인합니다.
+- [ ] `docs/roadmap/001-mvp-roadmap.md`에서 현재 phase와 미완료 항목을 확인합니다.
 - [ ] `docs/ux/README.md`에서 UX 작업의 상위 진행 순서를 확인합니다.
 - [ ] 이 문서의 체크박스 상태를 확인합니다.
 - [ ] `backend/config/strategies_config.json`과 `docs/trading-strategies/`의 현재 등록 전략을 확인합니다.

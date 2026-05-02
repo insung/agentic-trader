@@ -13,7 +13,7 @@ Run: `git status --short`
 필수 참조:
 - `AGENTS.md`
 - `README.md`
-- `docs/mvp-implementation-plan.md`
+- `docs/roadmap/001-mvp-roadmap.md`
 - 변경 영역과 관련된 테스트 파일
 
 ## 2. 실패 테스트 먼저 작성

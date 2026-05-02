@@ -1,6 +1,6 @@
 # Execution Guide
 
-이 문서는 Agentic Trader를 로컬에서 실행하고, Paper/Live 트레이딩 파이프라인을 구동하는 절차를 정리합니다. 테스트 절차는 [testing-guide.md](./testing-guide.md), 백테스트 절차는 [backtesting-guide.md](../backtesting/backtesting-guide.md)를 참고하십시오.
+이 문서는 Agentic Trader를 로컬에서 실행하고, Paper/Live 트레이딩 파이프라인을 구동하는 절차를 정리합니다. 테스트 절차는 [testing-guide.md](./testing-guide.md), 백테스트 절차는 [backtesting-guide.md](./backtesting-guide.md)를 참고하십시오.
 
 ## Prerequisites
 
@@ -124,7 +124,7 @@ curl -X POST http://localhost:8001/api/v1/trade/reconcile
 
 백테스트는 실제 LangGraph agent pipeline을 과거 데이터 위에서 실행합니다. 단순 룰 백테스트가 아니라 각 step에서 LLM 판단, Python guardrail, deterministic strategy gate를 함께 검증합니다.
 
-실행 체크리스트, `make backtest-fetch`, `make backtest-run`, `RISK_PCT`, 여러 달 기간 조회, 결과 확인 방법은 [backtesting-guide.md](../backtesting/backtesting-guide.md)를 기준 문서로 관리합니다. SQLite 저장소 구조와 조회 쿼리는 [sqlite-storage.md](../storage/sqlite-storage.md)를 참고하십시오.
+실행 체크리스트, `make backtest-fetch`, `make backtest-run`, `RISK_PCT`, 여러 달 기간 조회, 결과 확인 방법은 [backtesting-guide.md](./backtesting-guide.md)를 기준 문서로 관리합니다. SQLite 저장소 구조와 조회 쿼리는 [sqlite-storage.md](../storage/sqlite-storage.md)를 참고하십시오.
 
 ## Strategy Changes
 

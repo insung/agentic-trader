@@ -427,5 +427,5 @@ sqlite3 -header -column backtests/data/market_data.sqlite \
 
 - SQLite 저장소 구조: [sqlite-storage.md](../storage/sqlite-storage.md)
 - 재생 가능한 트레이딩 데이터 원칙: [replayable-trading-data.md](../storage/replayable-trading-data.md)
-- 전체 실행 가이드: [execution-guide.md](../guides/execution-guide.md)
-- 테스트 정책: [testing-guide.md](../guides/testing-guide.md)
+- 전체 실행 가이드: [execution-guide.md](./execution-guide.md)
+- 테스트 정책: [testing-guide.md](./testing-guide.md)

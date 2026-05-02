@@ -1,6 +1,6 @@
 # SQLite 테이블 스키마 레퍼런스
 
-이 문서는 Agentic Trader가 생성하는 SQLite 테이블을 컬럼 단위로 설명합니다. 운영 방법과 조회 명령은 [sqlite-storage.md](./sqlite-storage.md), 백테스트 실행 절차는 [backtesting-guide.md](../backtesting/backtesting-guide.md)를 참고하십시오.
+이 문서는 Agentic Trader가 생성하는 SQLite 테이블을 컬럼 단위로 설명합니다. 운영 방법과 조회 명령은 [sqlite-storage.md](./sqlite-storage.md), 백테스트 실행 절차는 [backtesting-guide.md](../guides/backtesting-guide.md)를 참고하십시오.
 
 ## DB 파일
 

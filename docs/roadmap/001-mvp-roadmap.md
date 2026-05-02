@@ -23,11 +23,11 @@ agentic-trader/
 ├── docs/                    # 아키텍처, 실행 가이드, 저장소, 전략/UX 문서
 │   ├── README.md            # 문서 색인
 │   ├── architecture/        # 비전, 시스템 플로우, 에이전트 워크플로우
-│   ├── backtesting/         # 백테스트 실행 절차
 │   ├── guides/              # 운영/테스트/MT5 실행 가이드
+│   ├── roadmap/             # 번호 prefix 기반 현재 상태/다음 목표 문서
+│   ├── research/            # 전략 연구, quant 결과, 보류 이유
 │   ├── storage/             # SQLite 스키마, replayable data 원칙
 │   ├── strategy/            # 전략 작성/MTF 가이드
-│   ├── ux/                  # 운영 콘솔, 전략 워크벤치, 백테스트 UX 계획
 │   └── trading-strategies/  # 런타임에 주입되는 전략 지식 파일
 ├── tests/                   # 단위 테스트 및 백테스트
 ├── backtests/               # ignored generated data/results/reports
@@ -106,20 +106,21 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
 
 ### 현재 부족한 부분 요약 (2026-04 기준)
 *   **백테스트 속도와 재현성:** 현재 백테스트는 각 Step마다 LangGraph와 LLM을 호출하므로 느리고, 같은 데이터라도 LLM 응답/외부 API 상태에 따라 결과가 흔들릴 수 있습니다. 빠른 반복 실험을 위해 LLM 응답 캐시, deterministic replay, `--from/--to`, `--max-steps` 같은 부분 실행 옵션이 필요합니다.
-*   **무매매 백테스트 반복:** 최근 BTCUSD 백테스트에서 `0 trades`가 반복되었습니다. LLM이 무에서 주문을 만들고 Python이 사후 검증하는 구조보다, Python이 먼저 후보 setup을 생성하고 LLM이 후보를 설명/선택하는 연구 루프로 피벗합니다. 상세 계획은 `docs/strategy/strategy-research-pivot.md`를 기준으로 관리합니다.
-*   **운영 UX 통합 부족:** 전략 문서, config, validator, 백테스트 결과, guardrail이 여러 파일과 DB에 흩어져 있습니다. 사람이 수동으로 운영할 수 있는 화면과 API 계획은 `docs/ux/operations-ux-roadmap.md`를 기준으로 관리합니다.
+*   **무매매 백테스트 반복:** 최근 BTCUSD 백테스트에서 `0 trades`가 반복되었습니다. LLM이 무에서 주문을 만들고 Python이 사후 검증하는 구조보다, Python이 먼저 후보 setup을 생성하고 LLM이 후보를 설명/선택하는 연구 루프로 피벗합니다. 상세 계획은 `docs/research/strategy-research-pivot.md`를 기준으로 관리합니다.
+*   **운영 UX 통합 부족:** 전략 문서, config, validator, 백테스트 결과, guardrail이 여러 파일과 DB에 흩어져 있습니다. 사람이 수동으로 운영할 수 있는 화면과 API 계획은 `docs/roadmap/003-operations-ux-roadmap.md`를 기준으로 관리합니다.
 *   **전략 검증은 시작 단계:** MA/Bollinger validator는 생겼지만, 아직 전략별 파라미터 튜닝, walk-forward 검증, out-of-sample 검증, 비용/스프레드/슬리피지 반영이 부족합니다. 현재 결과는 실제 체결 환경보다 낙관적일 수 있습니다.
 *   **운영 상태 저장이 취약:** 열린 포지션과 복기 상태가 로컬 JSON 중심이라 재시작/동시 실행/중복 처리에 취약합니다. 운영 단계에서는 SQLite 이상으로 옮겨 원자적 업데이트와 중복 방지를 보장해야 합니다.
 *   **세션 간 실행 기억 구조화 부족:** `AGENTS.md`를 Codex/Gemini/Antigravity 공통 SSOT로 정리했지만, 최근 실험 결과와 운영 지표는 아직 Markdown/JSON 중심입니다. 향후 SQLite/Vector DB 기반의 검색 가능한 기억 구조가 필요합니다.
-*   **관측 가능성 부족:** 주문 차단 사유, LLM 판단, validator 통과/실패, MT5 응답, reconcile 결과를 구조화해서 저장하고 조회해야 합니다. 사용자-facing 대시보드/감사 화면은 `docs/ux/operations-ux-roadmap.md`로 분리합니다.
+*   **관측 가능성 부족:** 주문 차단 사유, LLM 판단, validator 통과/실패, MT5 응답, reconcile 결과를 구조화해서 저장하고 조회해야 합니다. 사용자-facing 대시보드/감사 화면은 `docs/roadmap/003-operations-ux-roadmap.md`로 분리합니다.
 *   **로깅 표준화 부족:** 백테스트, MT5 adapter, 스크립트, 일부 CLI 흐름에 `print`/shell `printf`/`echo` 기반 출력이 남아 있습니다. 운영 로그와 테스트 로그를 분리하고 JSONL/SQLite 관측 데이터와 연결하려면 Python 표준 `logging` 기반 로거로 단계적으로 전환해야 합니다.
 
 ### 문서 구조 정리 (2026-04-27 반영)
-*   [x] `docs/README.md`를 문서 색인으로 추가하고, 문서를 `architecture/`, `backtesting/`, `guides/`, `storage/`, `strategy/` 하위 디렉터리로 분류했습니다.
+*   [x] `docs/README.md`를 문서 색인으로 추가하고, 문서를 `architecture/`, `guides/`, `roadmap/`, `research/`, `storage/`, `strategy/` 하위 디렉터리로 분류했습니다.
 *   [x] 런타임 전략 지식 파일은 코드가 동적으로 참조하는 경로이므로 `docs/trading-strategies/`에 유지합니다.
 *   [x] `AGENTS.md`, `README.md`, 이 문서의 새 세션 시작 경로를 재분류된 문서 구조에 맞춰 갱신했습니다.
-*   [x] 백테스트 DB 저장 개선, optional report artifact, runtime candle persistence 원칙을 `docs/backtesting/`, `docs/storage/`, `docs/guides/` 문서에 나누어 반영했습니다.
-*   [x] 운영 UX 계획을 `docs/ux/operations-ux-roadmap.md`로 분리하고, MVP 문서는 장기 로드맵과 링크만 유지합니다.
+*   [x] 백테스트 DB 저장 개선, optional report artifact, runtime candle persistence 원칙을 `docs/guides/`, `docs/storage/` 문서에 나누어 반영했습니다.
+*   [x] 운영 UX 계획을 `docs/roadmap/003-operations-ux-roadmap.md`로 분리하고, MVP 문서는 장기 로드맵과 링크만 유지합니다.
+*   [x] 문서 생성/배치 규칙을 `.agents/rules/document-rule.md`로 분리하고, 새 로드맵은 `docs/roadmap/00x-*.md` 번호 prefix를 사용합니다.
 
 ### AI 세션 지식 축적 프로토콜 (필수 운영 규칙)
 새 AI 세션이 매번 프로젝트를 처음부터 다시 추론하지 않도록, 지식을 다음 3층으로 나누어 축적합니다.
@@ -129,7 +130,7 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
     *   새로운 세션은 작업 전 반드시 `AGENTS.md`를 먼저 읽고, FastAPI/LangGraph/Guardrail 중심 구조와 TDD gate를 우선해야 합니다.
     *   `GEMINI.md`는 Google 도구 호환용 얇은 오버레이이며, 프로젝트 원칙은 `AGENTS.md`에만 중복 없이 기록합니다.
     *   바꾸기 어려운 원칙만 기록하고, 실험 로그나 임시 결론은 넣지 않습니다.
-2.  **로드맵 및 현재 상태:** `docs/mvp-implementation-plan.md`
+2.  **로드맵 및 현재 상태:** `docs/roadmap/001-mvp-roadmap.md`
     *   완료된 Phase, 아직 부족한 점, 다음 목표를 기록합니다.
     *   큰 기능을 끝냈거나 중요한 방향 전환이 생기면 이 문서를 갱신합니다.
     *   새 세션은 `AGENTS.md` 다음으로 이 문서를 읽어 “지금 어디까지 왔는지”를 파악합니다.
@@ -142,15 +143,15 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
 1.  `AGENTS.md`
 2.  `README.md`
 3.  `docs/architecture/vision-and-philosophy.md`
-4.  `docs/mvp-implementation-plan.md`
+4.  `docs/roadmap/001-mvp-roadmap.md`
 5.  최근 변경 확인: `git status --short`, `git log --oneline -5`
 6.  현재 작업이 테스트 관련이면 `docs/guides/testing-guide.md`
-7.  백테스트/운영 관련이면 `docs/backtesting/backtesting-guide.md`, `docs/guides/execution-guide.md`, `docs/guides/live-operation-runbook.md`
+7.  백테스트/운영 관련이면 `docs/guides/backtesting-guide.md`, `docs/guides/execution-guide.md`, `docs/guides/live-operation-runbook.md`
 8.  전략 관련이면 `docs/trading-strategies/`, `backend/config/strategies_config.json`, `backend/features/trading/strategy_validators.py`
 
 작업 종료 시 handoff 규칙:
 *   코드 변경이 있으면 테스트 명령과 결과를 최종 응답 및 관련 문서에 남깁니다.
-*   아키텍처 결정이나 반복될 교훈은 `docs/mvp-implementation-plan.md` 또는 `AGENTS.md`에 반영합니다.
+*   아키텍처 결정이나 반복될 교훈은 `docs/roadmap/001-mvp-roadmap.md` 또는 `AGENTS.md`에 반영합니다.
 *   백테스트에서 나온 수치/차단 사유/결론은 리포트와 SQLite 결과 DB에 남기고, 단순 대화 안에만 두지 않습니다.
 *   “지금은 보류한 이유”도 기록합니다. 다음 세션이 같은 길을 다시 탐색하지 않게 하기 위함입니다.
 
@@ -186,7 +187,7 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
     *   [x] `run_backtest.py`에 `--start-step`, `--max-steps`, `--no-review`, `--log-level` 옵션을 추가하여 짧은 디버그 실행과 긴 검증 실행을 분리합니다. `make backtest-run`에서는 `START_STEP`, `MAX_STEPS`, `NO_REVIEW`, `LOG_LEVEL`로 전달합니다.
     *   [x] 백테스트 JSONL 구조화 로그를 `backtests/logs/backtest_<run_id>.jsonl`에 남깁니다. step/node별 `elapsed_ms`, decision status, rejection reason, trade open/close 이벤트를 기록하여 병목과 손실 원인을 추적합니다.
     *   [x] vectorbt 기반 quant research 경로를 추가했습니다. `make install-quant`로 옵션 의존성을 설치하고, `make quant-run`으로 SQLite `candles`에서 Bollinger baseline, Bollinger MTF baseline, Trend Pullback baseline, Trend Pullback Reclaim baseline, Breakout baseline 파라미터 스윕을 실행해 `quant_runs`, `quant_results`에 저장합니다.
-    *   [x] 반복된 `0 trades` run을 분석하는 No-Trade Audit을 추가합니다. 상세 체크리스트는 `docs/strategy/strategy-research-pivot.md`를 기준으로 합니다.
+    *   [x] 반복된 `0 trades` run을 분석하는 No-Trade Audit을 추가합니다. 상세 체크리스트는 `docs/research/strategy-research-pivot.md`를 기준으로 합니다.
     *   [x] research/backtesting 분석 모듈(`quant_research`, `quant_summary`, `no_trade_audit`, `reporting`) 구현을 `backend/features/trading/research/` 하위 패키지로 분리하고, 기존 `backend/features/trading/*.py` import 경로는 thin compatibility wrapper로 유지했습니다.
     *   [x] backtest persistence 구현을 `schema.py`, `market_data_store.py`, `backtest_result_store.py`, `quant_result_store.py`로 책임별 분리하고, 기존 `persistence.backtest_store` 및 `backend.features.trading.backtest_store` 경로는 compatibility facade/wrapper로 유지했습니다.
     *   [x] LangGraph node helper를 `schemas.py`, `prompts.py`, `strategy_registry.py`, `llm_client.py`, `order_helpers.py`로 분리해 `nodes.py`는 node orchestration 중심으로 축소했습니다.
@@ -224,5 +225,5 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
 ### Phase 9: 다중 자산 포트폴리오 및 운영 UX (예정)
 *   **목표:** 단일 종목을 넘어 포트폴리오 단위로 확장하고, 운영 UX는 별도 로드맵에 따라 사람이 수동으로 이해/조작 가능한 콘솔로 발전시킵니다.
 *   **계획:**
-    *   운영 UX 상세 계획은 `docs/ux/operations-ux-roadmap.md`에서 관리합니다.
+    *   운영 UX 상세 계획은 `docs/roadmap/003-operations-ux-roadmap.md`에서 관리합니다.
     *   EURUSD 단일 종목에서 벗어나 나스닥(US100), 금(XAUUSD), 비트코인(BTCUSD) 등 다중 자산 병렬 트레이딩 파이프라인 가동.

@@ -190,9 +190,9 @@ make quant-run \
 
 아래 문서들을 갱신합니다.
 
-- `docs/strategy/strategy-research-pivot.md`
-- `docs/backtesting/backtesting-guide.md`
-- `docs/mvp-implementation-plan.md`
+- `docs/research/strategy-research-pivot.md`
+- `docs/guides/backtesting-guide.md`
+- `docs/roadmap/001-mvp-roadmap.md`
 
 ## 승격 전 체크리스트
 

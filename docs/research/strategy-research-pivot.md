@@ -155,9 +155,9 @@ No-Trade Audit은 구현되어 있습니다. 이제는 월별 walk-forward와 MA
 
 ## 관련 문서
 
-- `docs/backtesting/backtesting-guide.md`
+- `docs/guides/backtesting-guide.md`
 - `docs/storage/sqlite-schema-reference.md`
 - `docs/ux/README.md`
-- `docs/ux/operations-ux-roadmap.md`
+- `docs/roadmap/003-operations-ux-roadmap.md`
 - `backend/features/trading/strategy_validators.py`
 - `backend/config/strategies_config.json`

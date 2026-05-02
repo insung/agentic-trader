@@ -112,6 +112,7 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
 *   **운영 상태 저장이 취약:** 열린 포지션과 복기 상태가 로컬 JSON 중심이라 재시작/동시 실행/중복 처리에 취약합니다. 운영 단계에서는 SQLite 이상으로 옮겨 원자적 업데이트와 중복 방지를 보장해야 합니다.
 *   **세션 간 실행 기억 구조화 부족:** `AGENTS.md`를 Codex/Gemini/Antigravity 공통 SSOT로 정리했지만, 최근 실험 결과와 운영 지표는 아직 Markdown/JSON 중심입니다. 향후 SQLite/Vector DB 기반의 검색 가능한 기억 구조가 필요합니다.
 *   **관측 가능성 부족:** 주문 차단 사유, LLM 판단, validator 통과/실패, MT5 응답, reconcile 결과를 구조화해서 저장하고 조회해야 합니다. 사용자-facing 대시보드/감사 화면은 `docs/ux/operations-ux-roadmap.md`로 분리합니다.
+*   **로깅 표준화 부족:** 백테스트, MT5 adapter, 스크립트, 일부 CLI 흐름에 `print`/shell `printf`/`echo` 기반 출력이 남아 있습니다. 운영 로그와 테스트 로그를 분리하고 JSONL/SQLite 관측 데이터와 연결하려면 Python 표준 `logging` 기반 로거로 단계적으로 전환해야 합니다.
 
 ### 문서 구조 정리 (2026-04-27 반영)
 *   [x] `docs/README.md`를 문서 색인으로 추가하고, 문서를 `architecture/`, `backtesting/`, `guides/`, `storage/`, `strategy/` 하위 디렉터리로 분류했습니다.
@@ -159,11 +160,16 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
     *   [x] **자동 트리거 스케줄러 구현:** FastAPI lifespan에 `TriggerScheduler`를 등록하여 주기적인 매매 판단 자동화.
     *   [x] **트리거 이력 저장소 구축:** `trading_logs/trigger_history.sqlite`에 실행 이력, 이벤트, 스냅샷, 스케줄 규칙 저장.
     *   [x] **트리거 관리 API:** 규칙 생성/조회/상태 전환 및 실행 이력 조회를 위한 엔드포인트 추가.
+    *   [x] **FastAPI 구조 정리:** `main.py`를 thin entrypoint로 줄이고, app factory/router/DTO를 `backend/api/`와 `backend/features/trading/schemas.py`로 분리했습니다. Trigger rule API는 store 공개 함수만 호출하도록 정리해 router의 raw SQL 접근을 제거했습니다.
+    *   [x] **Persistence layout 정리:** backtest/trading log/trigger SQLite store 구현을 `backend/features/trading/persistence/`로 이동하고, 기존 `backend/features/trading/*_store.py` 경로는 thin compatibility wrapper로 유지했습니다.
+    *   [x] **Operations layout 정리:** position tracking/reconcile/review coordination 구현을 `backend/features/trading/operations/position_tracker.py`로 이동하고, 기존 `backend/features/trading/position_tracker.py` 경로는 compatibility wrapper로 유지했습니다. JSON/SQLite 저장 경로와 공개 함수 계약은 그대로 유지합니다.
+    *   [x] **MT5 adapter 구조 정리:** MT5 connection, market data, account/history, live execution, paper execution을 `backend/features/trading/adapters/` 하위 모듈로 분리하고, 기존 `backend/features/trading/mt5_adapter.py`는 compatibility wrapper로 유지했습니다.
 *   **계획:**
     *   서버 시작 시 MT5 open positions와 `trading_logs/tracked_positions.json`을 대조하여 추적 상태를 자동 복구합니다.
     *   이미 열린 포지션이 있으면 동일 심볼/전략의 신규 진입을 가드레일에서 차단합니다.
     *   [x] 현재 로컬 JSON 기반 상태 저장(`tracked_positions.json`, `reviewed_trades.json`)을 SQLite mirror(`trading_logs/trading_logs.sqlite`)와 병행 저장하여 검색 가능한 운영 로그를 축적합니다. 운영 원자성 강화와 JSON 완전 제거는 후속 과제로 둡니다.
     *   주문 실패, MT5 연결 끊김, LLM API 실패, reconcile 실패에 대한 재시도/백오프/알림 정책을 정의합니다.
+    *   [ ] 백테스트/운영 코드에 남아 있는 `print`와 shell `printf`/`echo` 중심 출력을 Python `logging` 기반 로거와 Makefile/스크립트 표준 로그 포맷으로 전환합니다. 우선순위는 주문/MT5/reconcile/백테스트 runner처럼 운영 장애 분석에 필요한 경로부터 둡니다.
     *   VPS 운영 runbook을 기준으로 데모 계좌에서 1주일 이상 연속 구동 검증을 수행합니다.
 
 ### Phase 6.5: 백테스트 엔진 속도, 캐시, 성과 DB 강화 (예정)
@@ -180,7 +186,10 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
     *   [x] `run_backtest.py`에 `--start-step`, `--max-steps`, `--no-review`, `--log-level` 옵션을 추가하여 짧은 디버그 실행과 긴 검증 실행을 분리합니다. `make backtest-run`에서는 `START_STEP`, `MAX_STEPS`, `NO_REVIEW`, `LOG_LEVEL`로 전달합니다.
     *   [x] 백테스트 JSONL 구조화 로그를 `backtests/logs/backtest_<run_id>.jsonl`에 남깁니다. step/node별 `elapsed_ms`, decision status, rejection reason, trade open/close 이벤트를 기록하여 병목과 손실 원인을 추적합니다.
     *   [x] vectorbt 기반 quant research 경로를 추가했습니다. `make install-quant`로 옵션 의존성을 설치하고, `make quant-run`으로 SQLite `candles`에서 Bollinger baseline, Bollinger MTF baseline, Trend Pullback baseline, Trend Pullback Reclaim baseline, Breakout baseline 파라미터 스윕을 실행해 `quant_runs`, `quant_results`에 저장합니다.
-    *   반복된 `0 trades` run을 분석하는 No-Trade Audit을 추가합니다. 상세 체크리스트는 `docs/strategy/strategy-research-pivot.md`를 기준으로 합니다.
+    *   [x] 반복된 `0 trades` run을 분석하는 No-Trade Audit을 추가합니다. 상세 체크리스트는 `docs/strategy/strategy-research-pivot.md`를 기준으로 합니다.
+    *   [x] research/backtesting 분석 모듈(`quant_research`, `quant_summary`, `no_trade_audit`, `reporting`) 구현을 `backend/features/trading/research/` 하위 패키지로 분리하고, 기존 `backend/features/trading/*.py` import 경로는 thin compatibility wrapper로 유지했습니다.
+    *   [x] backtest persistence 구현을 `schema.py`, `market_data_store.py`, `backtest_result_store.py`, `quant_result_store.py`로 책임별 분리하고, 기존 `persistence.backtest_store` 및 `backend.features.trading.backtest_store` 경로는 compatibility facade/wrapper로 유지했습니다.
+    *   [x] LangGraph node helper를 `schemas.py`, `prompts.py`, `strategy_registry.py`, `llm_client.py`, `order_helpers.py`로 분리해 `nodes.py`는 node orchestration 중심으로 축소했습니다.
     *   동일한 `(symbol, timeframes, candle_time, raw_data, prompt_version)` 조합의 LLM 응답을 캐시하여 반복 백테스트 비용과 시간을 줄입니다.
     *   LLM 호출 없이 저장된 의사결정 캐시를 재생하는 deterministic replay 모드를 추가합니다.
     *   SQLite 결과 테이블을 활용해 전략별 성과를 비교합니다.

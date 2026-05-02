@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from backend.main import run_trading_workflow
+from backend.services.trading_service import run_trading_workflow
 
 @patch('backend.services.trading_service.get_compiled_graph')
 @patch('backend.services.trading_service.track_open_position')

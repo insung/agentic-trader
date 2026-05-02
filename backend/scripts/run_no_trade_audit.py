@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import argparse
 
-from backend.features.trading.backtest_store import DEFAULT_BACKTEST_DB_PATH
-from backend.features.trading.no_trade_audit import format_no_trade_audit, summarize_no_trade_audit
+from backend.features.trading.persistence.backtest_store import DEFAULT_BACKTEST_DB_PATH
+from backend.features.trading.research.no_trade_audit import format_no_trade_audit, summarize_no_trade_audit
 
 
 def parse_args() -> argparse.Namespace:

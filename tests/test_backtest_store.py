@@ -3,7 +3,7 @@ import sqlite3
 import pandas as pd
 
 from backend.features.trading import backtest_store
-from backend.features.trading.reporting import _summarize_decisions
+from backend.features.trading.research.reporting import _summarize_decisions
 
 
 def _sample_candles(start="2025-01-01 00:00:00", periods=3, freq="15min"):

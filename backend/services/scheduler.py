@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Any, Optional
 
-from backend.features.trading.trigger_store import (
+from backend.features.trading.persistence.trigger_store import (
     get_active_schedule_rules,
     update_rule_last_triggered,
     create_trigger_run,

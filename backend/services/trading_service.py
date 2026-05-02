@@ -7,13 +7,14 @@ from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 
 from backend.workflows.graph import get_compiled_graph
-from backend.features.trading.mt5_adapter import MT5Client, execute_mock_order
+from backend.features.trading.adapters.mt5_execution import MT5Client
+from backend.features.trading.adapters.paper_execution import execute_mock_order
 from backend.core.state_models import Order, OrderAction, OrderResult
 from backend.features.trading.guardrails import validate_order_prices, enforce_one_percent_rule
 from backend.features.trading.strategy_validators import validate_strategy_setup
-from backend.features.trading.position_tracker import build_decision_context, track_open_position
+from backend.features.trading.operations.position_tracker import build_decision_context, track_open_position
 from backend.features.trading.usecase import TradeExecutionUseCase
-from backend.features.trading.trigger_store import (
+from backend.features.trading.persistence.trigger_store import (
     create_trigger_run,
     update_trigger_run,
     add_trigger_event,

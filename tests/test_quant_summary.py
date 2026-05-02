@@ -1,11 +1,17 @@
 from backend.features.trading import backtest_store
-from backend.features.trading.quant_research import QuantResearchResult
-from backend.features.trading.quant_summary import (
+from backend.features.trading.research.quant_research import QuantResearchResult
+from backend.features.trading.research.quant_summary import (
     format_quant_monthly_summary,
     format_quant_summary,
     summarize_quant_runs,
     summarize_quant_runs_by_month,
 )
+
+
+def test_legacy_quant_research_wrapper_reexports_public_contract():
+    from backend.features.trading.quant_research import QuantResearchResult as LegacyQuantResearchResult
+
+    assert LegacyQuantResearchResult is QuantResearchResult
 
 
 def test_summarize_quant_runs_returns_top_rank_per_run(tmp_path):
@@ -98,6 +104,62 @@ def test_summarize_quant_runs_returns_top_rank_per_run(tmp_path):
     assert rows[0]["profit_factor"] == 1.05
     assert rows[1]["run_id"] == "QR-BB"
     assert rows[1]["timeframe_label"] == "M15"
+
+
+def test_backtest_store_load_top_quant_results_returns_rank_one_rows(tmp_path):
+    db_path = tmp_path / "market_data.sqlite"
+    backtest_store.persist_quant_research_result(
+        str(db_path),
+        QuantResearchResult(
+            run={
+                "run_id": "QR-BB",
+                "strategy": "bollinger",
+                "symbol": "BTCUSD",
+                "timeframe": "M15",
+                "data_from": "2025-01-01",
+                "data_to": "2025-03-31",
+                "init_cash": 10000.0,
+                "fees": 0.0002,
+                "slippage": 0.0002,
+            },
+            results=[
+                {
+                    "parameter_json": {"bb_window": 20, "rr": 1.3},
+                    "total_return_pct": 3.5,
+                    "total_trades": 132,
+                    "win_rate": 52.0,
+                    "profit_factor": 1.06,
+                    "max_drawdown_pct": 10.9,
+                    "sharpe": 0.4,
+                    "expectancy": 1.2,
+                    "rank": 1,
+                },
+                {
+                    "parameter_json": {"bb_window": 14, "rr": 1.5},
+                    "total_return_pct": 1.0,
+                    "total_trades": 120,
+                    "win_rate": 51.0,
+                    "profit_factor": 1.01,
+                    "max_drawdown_pct": 11.0,
+                    "sharpe": 0.1,
+                    "expectancy": 0.3,
+                    "rank": 2,
+                },
+            ],
+        ),
+    )
+
+    rows = backtest_store.load_top_quant_results(
+        str(db_path),
+        symbol="BTCUSD",
+        from_date="2025-01-01",
+        to_date="2025-03-31",
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["run_id"] == "QR-BB"
+    assert rows[0]["rank"] == 1
+    assert rows[0]["parameter_json"] == '{"bb_window": 20, "rr": 1.3}'
 
 
 def test_summarize_quant_runs_filters_by_run_id(tmp_path):

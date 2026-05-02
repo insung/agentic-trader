@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pandas as pd
 
 from backend.features.trading import backtest_store
-from backend.features.trading.quant_research import (
+from backend.features.trading.research.quant_research import (
     QuantResearchConfig,
     QuantResearchResult,
     run_buy_hold_research,

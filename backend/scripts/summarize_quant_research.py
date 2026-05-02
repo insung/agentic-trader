@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import argparse
 
-from backend.features.trading.backtest_store import DEFAULT_BACKTEST_DB_PATH
-from backend.features.trading.quant_summary import (
+from backend.features.trading.persistence.backtest_store import DEFAULT_BACKTEST_DB_PATH
+from backend.features.trading.research.quant_summary import (
     format_quant_monthly_summary,
     format_quant_summary,
     summarize_quant_runs,

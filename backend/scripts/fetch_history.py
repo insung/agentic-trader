@@ -21,8 +21,8 @@ try:
 except ImportError:
     mt5 = None
 
-from backend.features.trading.mt5_adapter import TIMEFRAME_MAP
-from backend.features.trading.backtest_store import (
+from backend.features.trading.adapters.mt5_market_data import TIMEFRAME_MAP
+from backend.features.trading.persistence.backtest_store import (
     DEFAULT_BACKTEST_DB_PATH,
     create_import_batch,
     update_import_batch_status,
@@ -70,7 +70,7 @@ def fetch_and_save(
         sys.exit(1)
 
     # MT5 초기화
-    from backend.features.trading.mt5_adapter import init_mt5_connection
+    from backend.features.trading.adapters.mt5_connection import init_mt5_connection
 
     if not init_mt5_connection():
         print("❌ MT5 연결 실패.")

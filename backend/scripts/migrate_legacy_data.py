@@ -16,7 +16,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import pandas as pd
 
-from backend.features.trading.backtest_store import (
+from backend.features.trading.persistence.backtest_store import (
     DEFAULT_BACKTEST_DB_PATH,
     create_import_batch,
     persist_backtest_result,
@@ -24,7 +24,7 @@ from backend.features.trading.backtest_store import (
     update_import_batch_status,
     upsert_candles,
 )
-from backend.features.trading.trading_log_store import (
+from backend.features.trading.persistence.trading_log_store import (
     DEFAULT_TRADING_LOG_DB_PATH,
     replace_reviewed_trade_ids,
     replace_tracked_positions,

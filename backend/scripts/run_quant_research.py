@@ -9,12 +9,12 @@ from __future__ import annotations
 import argparse
 from typing import List
 
-from backend.features.trading.backtest_store import (
+from backend.features.trading.persistence.backtest_store import (
     DEFAULT_BACKTEST_DB_PATH,
     load_candles,
     persist_quant_research_result,
 )
-from backend.features.trading.quant_research import (
+from backend.features.trading.research.quant_research import (
     QuantResearchConfig,
     run_buy_hold_research,
     run_breakout_research,

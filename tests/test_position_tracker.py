@@ -1,4 +1,10 @@
 from backend.features.trading import position_tracker
+from backend.features.trading.operations import position_tracker as operations_position_tracker
+
+
+def test_legacy_position_tracker_import_aliases_operations_module():
+    assert position_tracker is operations_position_tracker
+    assert position_tracker.track_open_position is operations_position_tracker.track_open_position
 
 
 def test_paper_position_review_runs_only_after_close(tmp_path, monkeypatch):

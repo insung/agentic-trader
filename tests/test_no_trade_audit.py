@@ -3,7 +3,7 @@ import sqlite3
 import pandas as pd
 
 from backend.features.trading.backtest_store import persist_backtest_result, upsert_candles
-from backend.features.trading.no_trade_audit import format_no_trade_audit, summarize_no_trade_audit
+from backend.features.trading.research.no_trade_audit import format_no_trade_audit, summarize_no_trade_audit
 
 
 def _sample_candles(periods=20):

@@ -1,148 +1,33 @@
 import os
 import json
 from datetime import datetime
-from typing import Dict, Any, List
-from pydantic import BaseModel, Field
+from typing import Dict, Any
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
-from tenacity import retry, stop_after_attempt, wait_exponential
 
 from backend.workflows.state import AgentState
-from backend.features.trading.mt5_adapter import fetch_ohlcv, get_account_summary, execute_mock_order, get_current_price, is_mt5_available
+from backend.workflows.llm_client import invoke_llm_with_retry
+from backend.workflows.order_helpers import project_tp_from_rr
+from backend.workflows.prompts import read_prompt
+from backend.workflows.schemas import FinalOrder, ReviewLog, StrategyHypothesis, TechSummary
+from backend.workflows.strategy_registry import load_strategy_contract, read_strategies
+from backend.features.trading.adapters.mt5_account import get_account_summary
+from backend.features.trading.adapters.mt5_connection import is_mt5_available
+from backend.features.trading.adapters.mt5_market_data import fetch_ohlcv, get_current_price
+from backend.features.trading.adapters.paper_execution import execute_mock_order
 from backend.features.trading.guardrails import enforce_one_percent_rule, validate_order_prices
 from backend.features.trading.indicators import add_technical_indicators, build_indicator_snapshot
 from backend.features.trading.market_hours import is_market_open, get_market_status_message
 from backend.features.trading.strategy_validators import validate_strategy_setup
-from backend.features.trading.backtest_store import DEFAULT_BACKTEST_DB_PATH, upsert_candles
-from backend.features.trading.trading_log_store import store_trade_review, DEFAULT_TRADING_LOG_DB_PATH
+from backend.features.trading.persistence.backtest_store import DEFAULT_BACKTEST_DB_PATH, upsert_candles
+from backend.features.trading.persistence.trading_log_store import DEFAULT_TRADING_LOG_DB_PATH, store_trade_review
 
-# Pydantic Models for Structured Output
-class TechSummary(BaseModel):
-    trend: str = Field(description="bullish | bearish | neutral")
-    market_regime: str = Field(description="One of: Bullish, Bearish, Ranging, High Volatility")
-    trade_worthy: bool = Field(description="True if the market has clear direction and is worth trading, False if choppy/flat.")
-    key_observations: List[str] = Field(description="List of key observations")
-    support_levels: List[float] = Field(description="Support levels")
-    resistance_levels: List[float] = Field(description="Resistance levels")
-    summary: str = Field(description="Comprehensive technical analysis briefing (max 3 sentences)")
-
-class StrategyHypothesis(BaseModel):
-    selected_strategy: str = Field(description="Selected strategy name")
-    market_condition: str = Field(description="Current market condition assessment")
-    action: str = Field(description="BUY | SELL | WAIT")
-    confidence: float = Field(description="Confidence level between 0 and 1")
-    reasoning: str = Field(description="Detailed explanation of the hypothesis")
-
-class FinalOrder(BaseModel):
-    action: str = Field(description="BUY | SELL | HOLD")
-    sl: float = Field(description="Stop Loss price")
-    tp: float = Field(description="Take Profit price")
-    target_rr: float = Field(2.0, description="Risk/reward multiple used to derive TP for execution")
-    exit_plan: str = Field("primary_target", description="Execution exit profile, e.g. primary_target | runner | full_exit")
-    final_reasoning: str = Field(description="Logical reasoning for final approval or rejection")
-
-class ReviewLog(BaseModel):
-    trade_summary: str = Field(description="Overall summary of the trade")
-    risk_assessment: str = Field(description="Assessment of chosen risk parameters")
-    lessons_learned: str = Field(description="Key takeaways or improvements")
-    save_path: str = Field(description="Suggested filename for saving the log, e.g., review_YYYYMMDD_HHMM.md")
-
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-def _invoke_llm_with_retry(structured_llm, messages):
-    """Invokes LLM with exponential backoff retry logic."""
-    return structured_llm.invoke(messages)
-
-def _read_prompt(agent_name: str) -> str:
-    """Read the system prompt from the markdown file."""
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    file_path = os.path.join(base_dir, ".agents", "agents", f"{agent_name}.md")
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
-    except FileNotFoundError:
-        return f"System prompt for {agent_name} not found."
-
-def _read_strategies(market_regime: str = "Ranging", current_timeframes: List[str] = None) -> str:
-    if current_timeframes is None:
-        current_timeframes = ["M5"]
-        
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    strategies_dir = os.path.join(base_dir, "docs", "trading-strategies")
-    config_path = os.path.join(base_dir, "backend", "config", "strategies_config.json")
-    
-    strategies_text = ""
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-        
-        for strat in config.get("strategies", []):
-            regime_match = market_regime in strat.get("allowed_regimes", [])
-            req_tfs = strat.get("required_timeframes", current_timeframes) # Default to matching if not specified
-            tf_match = set(req_tfs).issubset(set(current_timeframes))
-            
-            if regime_match and tf_match:
-                filename = strat.get("file")
-                filepath = os.path.join(strategies_dir, filename)
-                if os.path.exists(filepath):
-                    with open(filepath, "r", encoding="utf-8") as sf:
-                        strategies_text += f"\n--- {strat.get('name')} ---\n"
-                        strategies_text += sf.read()
-    except Exception as e:
-        print(f"Error reading strategies config: {e}")
-        # Fallback to returning all .md files if config fails
-        if os.path.exists(strategies_dir):
-            for filename in os.listdir(strategies_dir):
-                if filename.endswith(".md"):
-                    filepath = os.path.join(strategies_dir, filename)
-                    with open(filepath, "r", encoding="utf-8") as f:
-                        strategies_text += f"\n--- {filename} ---\n"
-                        strategies_text += f.read()
-
-    if not strategies_text.strip():
-        strategies_text = "No matching strategies found for current market regime."
-        
-    return strategies_text
-
-def _normalize_strategy_key(value: str) -> str:
-    return "".join(ch for ch in value.lower() if ch.isalnum())
-
-def _load_strategy_contract(strategy_name: str) -> Dict[str, Any]:
-    """Load registry metadata for a strategy by display name or file slug."""
-    if not strategy_name:
-        return {}
-
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    config_path = os.path.join(base_dir, "backend", "config", "strategies_config.json")
-    target = _normalize_strategy_key(strategy_name)
-
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-        for strat in config.get("strategies", []):
-            candidates = [strat.get("name", ""), strat.get("file", "")]
-            for candidate in candidates:
-                if not candidate:
-                    continue
-                normalized = _normalize_strategy_key(candidate)
-                if normalized == target or normalized.startswith(target) or target.startswith(normalized):
-                    return strat
-    except Exception as exc:
-        print(f"⚠️ Failed to load strategy contract for {strategy_name}: {exc}")
-    return {}
-
-def _project_tp_from_rr(action: str, entry_price: float, sl_price: float, target_rr: float) -> float:
-    if entry_price <= 0 or sl_price <= 0 or target_rr <= 0:
-        return 0.0
-    risk = abs(entry_price - sl_price)
-    if risk <= 0:
-        return 0.0
-    action = action.upper()
-    if action == "BUY":
-        return entry_price + (risk * target_rr)
-    if action == "SELL":
-        return entry_price - (risk * target_rr)
-    return 0.0
-
+# Backward-compatible aliases for existing tests and callers.
+_invoke_llm_with_retry = invoke_llm_with_retry
+_load_strategy_contract = load_strategy_contract
+_project_tp_from_rr = project_tp_from_rr
+_read_prompt = read_prompt
+_read_strategies = read_strategies
 
 def _persist_runtime_candles(symbol: str, timeframe: str, df) -> None:
     """Optionally archive live/paper OHLCV snapshots for replayable trade reviews."""

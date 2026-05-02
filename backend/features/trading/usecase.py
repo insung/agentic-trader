@@ -7,7 +7,7 @@ from backend.features.trading.guardrails import (
     enforce_one_percent_rule,
     validate_sl_tp_modification_limit
 )
-from backend.features.trading.mt5_adapter import MT5Client
+from backend.features.trading.adapters.mt5_execution import MT5Client
 import datetime
 
 class TradeExecutionUseCase:

@@ -15,7 +15,10 @@ from backend.features.trading.trigger_store import (
     add_trigger_event,
     get_trigger_events,
     save_trigger_snapshot,
-    get_trigger_snapshot
+    get_trigger_snapshot,
+    list_schedule_rules,
+    set_schedule_rule_enabled,
+    delete_schedule_rule,
 )
 from backend.services.trading_service import run_trading_workflow_async
 
@@ -41,6 +44,17 @@ def test_trigger_store_rules(temp_trigger_db):
     assert len(active_rules) == 1
     assert active_rules[0]["name"] == "Test Rule"
     assert active_rules[0]["symbol"] == "EURUSD"
+
+    all_rules = list_schedule_rules(temp_trigger_db)
+    assert len(all_rules) == 1
+
+    set_schedule_rule_enabled(temp_trigger_db, rule_id, False)
+    assert get_active_schedule_rules(temp_trigger_db) == []
+    disabled_rules = list_schedule_rules(temp_trigger_db)
+    assert disabled_rules[0]["enabled"] == 0
+
+    delete_schedule_rule(temp_trigger_db, rule_id)
+    assert list_schedule_rules(temp_trigger_db) == []
 
 def test_trigger_run_lifecycle(temp_trigger_db):
     trigger_id = create_trigger_run(temp_trigger_db, {

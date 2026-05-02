@@ -19,7 +19,7 @@ from unittest.mock import patch, MagicMock
 
 import pandas as pd
 
-from backend.features.trading.backtest_store import (
+from backend.features.trading.persistence.backtest_store import (
     DEFAULT_BACKTEST_DB_PATH,
     calculate_candle_quality,
     finish_backtest_run,
@@ -31,7 +31,7 @@ from backend.features.trading.backtest_store import (
     store_backtest_report,
 )
 from backend.features.trading.guardrails import validate_order_prices
-from backend.features.trading.position_tracker import build_decision_context, review_closed_trade
+from backend.features.trading.operations.position_tracker import build_decision_context, review_closed_trade
 from backend.features.trading.strategy_validators import validate_strategy_setup
 
 # 프로젝트 루트를 기준으로 경로 설정
@@ -867,7 +867,7 @@ def main():
     report_archive: Optional[Dict[str, Any]] = None
 
     if args.report and trades:
-        from backend.features.trading.reporting import generate_backtest_report, _summarize_decisions
+        from backend.features.trading.research.reporting import generate_backtest_report, _summarize_decisions
         report_path = generate_backtest_report(
             trades=trades,
             equity_curve=engine.equity_curve,

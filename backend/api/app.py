@@ -14,6 +14,10 @@ from backend.features.trading.operations.position_tracker import reconcile_track
 from backend.features.trading.persistence.trigger_store import init_trigger_db
 from backend.services.scheduler import scheduler
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 async def _position_reconcile_loop():
     try:
         interval = int(os.environ.get("POSITION_RECONCILE_INTERVAL_SECONDS", "30"))
@@ -26,20 +30,20 @@ async def _position_reconcile_loop():
             reviewed = reconcile_tracked_positions()
             if reviewed:
                 ids = [item["trade_id"] for item in reviewed]
-                print(f"Reviewed closed trades: {ids}")
+                logger.info("Reviewed closed trades: %s", ids)
         except Exception as e:
-            print(f"Position reconcile loop failed: {e}")
+            logger.error("Position reconcile loop failed: %s", e)
         await asyncio.sleep(interval)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("Starting up Agentic Trader Backend...")
+    logger.info("Starting up Agentic Trader Backend...")
 
     if init_mt5_connection():
-        print("MT5 initialized successfully.")
+        logger.info("MT5 initialized successfully.")
     else:
-        print("MT5 initialization failed. Server will run in limited mode.")
+        logger.warning("MT5 initialization failed. Server will run in limited mode.")
 
     app.state.position_reconcile_task = asyncio.create_task(_position_reconcile_loop())
 
@@ -58,10 +62,10 @@ async def lifespan(app: FastAPI):
 
     await scheduler.stop()
 
-    print("Shutting down Agentic Trader Backend...")
+    logger.info("Shutting down Agentic Trader Backend...")
 
     if shutdown_mt5_connection():
-        print("MT5 shutdown successfully.")
+        logger.info("MT5 shutdown successfully.")
 
 
 def create_app() -> FastAPI:

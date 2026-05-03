@@ -58,6 +58,7 @@
 - [002 Trigger Scheduler Roadmap](./roadmap/002-trigger-scheduler-roadmap.md)
 - [003 Operations UX Roadmap](./roadmap/003-operations-ux-roadmap.md)
 - [004 MA Crossover Live Smoke Test Plan](./roadmap/004-ma-crossover-live-smoke-test-plan.md)
+- [005 Live Execution Observability Roadmap](./roadmap/005-live-execution-observability-roadmap.md)
 
 ## UX
 

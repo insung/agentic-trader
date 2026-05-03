@@ -32,6 +32,29 @@ class OrderResult(BaseModel):
     executed_price: Optional[float] = None
     error_message: Optional[str] = None
     timestamp: str
+    
+    # Step 2: Observability Extensions
+    mode: str = "paper"
+    symbol: str = ""
+    action: str = ""
+    requested_lot: float = 0.0
+    requested_entry_price: float = 0.0
+    requested_sl: float = 0.0
+    requested_tp: float = 0.0
+    risk_pct: float = 0.0
+    safe_lot: float = 0.0
+    
+    # MT5 specific fields
+    mt5_retcode: Optional[int] = None
+    mt5_comment: Optional[str] = None
+    mt5_order: Optional[int] = None
+    mt5_deal: Optional[int] = None
+    mt5_price: Optional[float] = None
+    mt5_request_id: Optional[int] = None
+    
+    # Raw payload and failure details
+    raw_response: Dict[str, Any] = Field(default_factory=dict)
+    failure_reason: Optional[str] = None
 
 class AgentStateSchema(BaseModel):
     """

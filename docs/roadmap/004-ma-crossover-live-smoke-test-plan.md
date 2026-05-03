@@ -53,17 +53,25 @@ RISK_PER_TRADE_PCT=0.001 make run-wine
 2. MT5 Trade 탭에서 열린 포지션이 없는지 확인합니다.
 3. live smoke schedule rule을 생성합니다.
 4. rule을 enable하고 1회 실행을 기다립니다.
-5. 1회 실행 후 즉시 rule을 disable합니다.
-6. `trigger_runs`, `trigger_events`, `trigger_execution_snapshots`에서 결과를 확인합니다.
-7. `HOLD` 또는 `blocked`이면 차단/보류 사유가 snapshot에 남았는지 확인합니다.
-8. 주문이 체결되면 MT5 ticket, SL, TP와 `trading_logs/tracked_positions.json`, `trading_logs/trading_logs.sqlite` 기록이 일치하는지 확인합니다.
-9. 포지션 청산 후 `make reconcile` 또는 자동 reconcile로 Risk Reviewer 복기가 생성되는지 확인합니다.
+5. **1회 실행 확인 즉시 rule을 disable합니다.**
+6. API를 통해 결과를 정밀하게 감시합니다:
+   - `/api/v1/triggers/{trigger_id}/events`를 조회하여 `order_acked` 또는 `order_failed` 페이로드를 확인합니다.
+   - `/api/v1/triggers/{trigger_id}/snapshot`을 조회하여 `guardrail_result.execution_details`와 `raw_response`를 확인합니다.
+7. MT5 터미널의 Trade/History 탭을 직접 확인하여 서버 기록과 터미널 상태가 일치하는지 대조합니다.
+8. `HOLD` 또는 `blocked`이면 차단/보류 사유가 snapshot에 남았는지 확인합니다.
+9. 주문이 체결되면 MT5 ticket, SL, TP와 `trading_logs/tracked_positions.json`, `trading_logs/trading_logs.sqlite` 기록이 일치하는지 확인합니다.
+10. 포지션 청산 후 `make reconcile` 또는 자동 reconcile로 Risk Reviewer 복기가 생성되는지 확인합니다.
 
 ## Done Criteria
 
 - live mode trigger run이 `trading_logs/trigger_history.sqlite`에 남습니다.
 - request, final state, final order, guardrail result snapshot이 비어 있지 않습니다.
-- `HOLD`, `blocked`, `failed`, `success` 중 어떤 결과든 사람이 원인을 추적할 수 있습니다.
+- **성공 판정 기준 (Hardened):**
+  - `ticket`이 0보다 커야 합니다.
+  - `executed_price`가 0.0보다 커야 합니다.
+  - MT5 `retcode`가 성공(10009 또는 10008)이어야 합니다.
+  - 위 조건 중 하나라도 누락되면 `success`로 간주하지 않으며 `order_failed`로 기록되어야 합니다.
+- `HOLD`, `blocked`, `failed`, `success` 중 어떤 결과든 사람이 원인을 추적할 수 있는 `raw_response`가 포함되어야 합니다.
 - 체결된 경우 MT5 포지션과 로컬 추적 상태가 같은 ticket과 가격 정보를 가집니다.
 - 청산된 경우 `trading_logs/review_*.md`와 SQLite `trade_reviews`에 복기가 남습니다.
 

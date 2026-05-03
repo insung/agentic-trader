@@ -87,6 +87,12 @@ class TriggerScheduler:
 
         for rule in rules:
             rule_id = rule["rule_id"]
+            log_base = {
+                "rule_id": rule_id,
+                "symbol": rule.get("symbol"),
+                "mode": rule.get("mode"),
+                "strategy_override": rule.get("strategy_override"),
+            }
             
             # 1. Check if it's time to trigger
             should_trigger = False
@@ -102,6 +108,18 @@ class TriggerScheduler:
                     should_trigger = True
 
             if not should_trigger:
+                logger.debug(
+                    "⏰ Scheduler: Skipping rule %s (%s). Reason: not_due. Next: %s",
+                    rule_id,
+                    rule.get("symbol"),
+                    next_trigger_at,
+                    extra={
+                        **log_base,
+                        "event": "trigger.scheduler.rule_skipped",
+                        "skip_reason": "not_due",
+                        "next_trigger_at": next_trigger_at,
+                    },
+                )
                 continue
 
             # 2. Calculate next trigger time for all cases where it was 'due'
@@ -127,7 +145,16 @@ class TriggerScheduler:
             if rule.get("market_hours_only") and not is_market_open(now, symbol=rule.get("symbol")):
                 # Update next trigger to avoid hot-looping during closed market
                 update_rule_last_triggered(None, rule_id, now_iso, new_next_iso)
-                logger.debug(f"Rule {rule_id} skipped: market closed. Next trigger set to {new_next_iso}")
+                logger.info(
+                    "⏰ Scheduler: Skipping rule %s (%s). Reason: market_hours_skip. Next: %s",
+                    rule_id, rule.get("symbol"), new_next_iso,
+                    extra={
+                        **log_base,
+                        "event": "trigger.scheduler.rule_skipped",
+                        "skip_reason": "market_hours_skip",
+                        "next_trigger_at": new_next_iso,
+                    },
+                )
                 continue
 
             # 4. Check lock
@@ -144,11 +171,28 @@ class TriggerScheduler:
                     "scheduled_at": now_iso
                 })
                 add_trigger_event(None, trigger_id, "skipped", message="Skipped due to active lock")
-                logger.warning(f"Rule {rule_id} skipped: lock active. Next trigger set to {new_next_iso}")
+                logger.warning(
+                    "⏰ Scheduler: Skipping rule %s (%s). Reason: lock_skip (Previous run in progress). Next: %s",
+                    rule_id, rule.get("symbol"), new_next_iso,
+                    extra={
+                        **log_base,
+                        "event": "trigger.scheduler.rule_skipped",
+                        "skip_reason": "lock_skip",
+                        "trigger_id": trigger_id,
+                        "next_trigger_at": new_next_iso,
+                    },
+                )
                 continue
             
             # 5. Update rule and execute
             update_rule_last_triggered(None, rule_id, now_iso, new_next_iso)
+            logger.info(
+                "⏰ Scheduler: Triggering rule %s (%s). Next: %s",
+                rule_id,
+                rule.get("symbol"),
+                new_next_iso,
+                extra={**log_base, "event": "trigger.scheduler.rule_due", "next_trigger_at": new_next_iso},
+            )
             asyncio.create_task(self._execute_rule(rule))
 
     async def _execute_rule(self, rule: Dict[str, Any]):

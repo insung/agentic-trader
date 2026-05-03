@@ -1,3 +1,4 @@
+import logging
 from langgraph.graph import StateGraph, START, END
 from backend.workflows.state import AgentState
 from backend.workflows.nodes import (
@@ -7,22 +8,26 @@ from backend.workflows.nodes import (
     chief_trader_node,
 )
 
+logger = logging.getLogger(__name__)
+
 def fetch_data_router(state: AgentState) -> str:
     """fetch_data 노드 후, 에러가 있으면 즉시 종료."""
+    trigger_id = getattr(state, "trigger_id", "N/A")
     if getattr(state, "error_flag", False):
         error_msg = getattr(state, "error_message", "Unknown error")
-        print(f"🛑 Workflow aborted after fetch_data: {error_msg}")
+        logger.error("🛑 Workflow [%s] aborted after fetch_data: %s", trigger_id, error_msg)
         return END
     return "tech_analyst"
 
 def tech_analyst_router(state: AgentState) -> str:
     """Tech Analyst 결과에 따른 라우팅. trade_worthy=False면 즉시 종료."""
+    trigger_id = getattr(state, "trigger_id", "N/A")
     if getattr(state, "error_flag", False):
-        print("🛑 Workflow aborted: LLM error in tech_analyst.")
+        logger.error("🛑 Workflow [%s] aborted: LLM error in tech_analyst.", trigger_id)
         return END
     tech_summary = getattr(state, "tech_summary", {})
     if not tech_summary.get("trade_worthy", True):
-        print("📊 Market is choppy. Short-circuiting workflow.")
+        logger.info("📊 Workflow [%s]: Market is choppy. Short-circuiting.", trigger_id)
         return END
     return "strategist"
 

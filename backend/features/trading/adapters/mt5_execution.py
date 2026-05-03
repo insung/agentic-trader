@@ -2,20 +2,25 @@
 from backend.features.trading.adapters.mt5_connection import mt5
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 def send_market_order(symbol: str, action: str, lot_size: float, sl: float, tp: float) -> dict:
     """
     안전장치를 통과한 최종 시장가 주문(Buy/Sell)을 MT5로 전송합니다.
     이 함수 호출 전 반드시 Python guardrail 검증을 거쳐야 합니다.
     """
     if mt5 is None:
-        return {}
+        return {"retcode": -1, "comment": "MT5 not initialized", "order": 0}
 
     order_type = mt5.ORDER_TYPE_BUY if action.lower() == "buy" else mt5.ORDER_TYPE_SELL
 
     tick = mt5.symbol_info_tick(symbol)
     if tick is None:
-        print(f"Failed to get tick info for {symbol}, error code: {mt5.last_error()}")
-        return {}
+        err_code = mt5.last_error()
+        logger.error(f"Failed to get tick info for {symbol}, error code: {err_code}")
+        return {"retcode": -2, "comment": f"Tick info failed: {err_code}", "order": 0}
 
     price = tick.ask if action.lower() == "buy" else tick.bid
 
@@ -36,9 +41,11 @@ def send_market_order(symbol: str, action: str, lot_size: float, sl: float, tp: 
 
     result = mt5.order_send(request)
     if result is None:
-        print(f"order_send failed, error code: {mt5.last_error()}")
-        return {}
+        err_code = mt5.last_error()
+        logger.error(f"order_send failed, error code: {err_code}")
+        return {"retcode": -3, "comment": f"order_send returned None, error: {err_code}", "order": 0}
 
+    # result is an OrderSendResult namedtuple-like object
     return result._asdict()
 
 

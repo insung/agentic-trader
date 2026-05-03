@@ -22,6 +22,10 @@ from backend.features.trading.strategy_validators import validate_strategy_setup
 from backend.features.trading.persistence.backtest_store import DEFAULT_BACKTEST_DB_PATH, upsert_candles
 from backend.features.trading.persistence.trading_log_store import DEFAULT_TRADING_LOG_DB_PATH, store_trade_review
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # Backward-compatible aliases for existing tests and callers.
 _invoke_llm_with_retry = invoke_llm_with_retry
 _load_strategy_contract = load_strategy_contract
@@ -37,28 +41,29 @@ def _persist_runtime_candles(symbol: str, timeframe: str, df) -> None:
     try:
         upsert_candles(db_path, symbol, timeframe, df)
     except Exception as exc:
-        print(f"⚠️ Runtime candle persistence failed for {symbol} {timeframe}: {exc}")
+        logger.warning("Runtime candle persistence failed for %s %s: %s", symbol, timeframe, exc)
 
 def fetch_data_node(state: AgentState) -> Dict[str, Any]:
     """Node 1: Fetch OHLCV Data and calculate indicators."""
-    print("[Node 1] fetch_data_node executed")
+    trigger_id = getattr(state, "trigger_id", "N/A")
     symbol = getattr(state, "symbol", "EURUSD")
+    logger.info("[Node 1] fetch_data_node executed for %s", symbol, extra={"trigger_id": trigger_id, "symbol": symbol})
     timeframes = getattr(state, "timeframes", ["M5"])
     
     # 시장 휴장 체크
     if not is_market_open(symbol=symbol):
         msg = get_market_status_message(symbol=symbol)
-        print(f"🚫 {msg}")
+        logger.warning("🚫 %s", msg, extra={"trigger_id": trigger_id, "symbol": symbol})
         return {"raw_data": "", "error_flag": True, "error_message": msg}
     
     # MT5 사용 가능 여부 체크
     if not is_mt5_available():
-        print("❌ MT5 not available. Cannot fetch live data.")
+        logger.error("❌ MT5 not available. Cannot fetch live data.", extra={"trigger_id": trigger_id, "symbol": symbol})
         return {"raw_data": "", "error_flag": True, "error_message": "MT5 not available. Run server with Wine Python."}
     
     account_info = get_account_summary()
     if not account_info:
-        print("❌ Failed to get account info from MT5.")
+        logger.error("❌ Failed to get account info from MT5.", extra={"trigger_id": trigger_id, "symbol": symbol})
         return {"raw_data": "", "error_flag": True, "error_message": "MT5 account info unavailable."}
     
     # 현재가 조회
@@ -71,7 +76,7 @@ def fetch_data_node(state: AgentState) -> Dict[str, Any]:
     for tf in timeframes:
         df = fetch_ohlcv(symbol, tf, 100)
         if df.empty:
-            print(f"❌ No OHLCV data for {symbol} on {tf}.")
+            logger.warning("❌ No OHLCV data for %s on %s.", symbol, tf, extra={"trigger_id": trigger_id, "symbol": symbol, "timeframe": tf})
             continue
         _persist_runtime_candles(symbol, tf, df)
         enriched = add_technical_indicators(df)
@@ -94,7 +99,9 @@ def fetch_data_node(state: AgentState) -> Dict[str, Any]:
 
 def tech_analyst_node(state: AgentState) -> Dict[str, Any]:
     """Node 2: Tech Analyst analyzes raw data and outputs a summary."""
-    print("[Node 2] tech_analyst_node executed")
+    trigger_id = getattr(state, "trigger_id", "N/A")
+    symbol = getattr(state, "symbol", "N/A")
+    logger.info("[Node 2] tech_analyst_node executed", extra={"trigger_id": trigger_id, "symbol": symbol})
     llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
     structured_llm = llm.with_structured_output(TechSummary)
     
@@ -106,12 +113,14 @@ def tech_analyst_node(state: AgentState) -> Dict[str, Any]:
         response = _invoke_llm_with_retry(structured_llm, messages)
         return {"tech_summary": response.model_dump(), "error_flag": False}
     except Exception as e:
-        print(f"LLM API completely failed after retries: {e}")
+        logger.error("LLM API completely failed in tech_analyst: %s", e, extra={"trigger_id": trigger_id, "symbol": symbol})
         return {"error_flag": True}
 
 def strategist_node(state: AgentState) -> Dict[str, Any]:
     """Node 3: Strategist reviews technical summary and returns a hypothesis."""
-    print("[Node 3] strategist_node executed")
+    trigger_id = getattr(state, "trigger_id", "N/A")
+    symbol = getattr(state, "symbol", "N/A")
+    logger.info("[Node 3] strategist_node executed", extra={"trigger_id": trigger_id, "symbol": symbol})
     llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
     structured_llm = llm.with_structured_output(StrategyHypothesis)
     
@@ -129,12 +138,14 @@ def strategist_node(state: AgentState) -> Dict[str, Any]:
         response = _invoke_llm_with_retry(structured_llm, messages)
         return {"strategy_hypothesis": response.model_dump(), "error_flag": False}
     except Exception as e:
-        print(f"LLM API completely failed after retries: {e}")
+        logger.error("LLM API completely failed in strategist: %s", e, extra={"trigger_id": trigger_id, "symbol": symbol})
         return {"error_flag": True}
 
 def chief_trader_node(state: AgentState) -> Dict[str, Any]:
     """Node 4: Chief Trader reviews hypothesis and returns final order."""
-    print("[Node 4] chief_trader_node executed")
+    trigger_id = getattr(state, "trigger_id", "N/A")
+    symbol = getattr(state, "symbol", "N/A")
+    logger.info("[Node 4] chief_trader_node executed", extra={"trigger_id": trigger_id, "symbol": symbol})
     llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
     structured_llm = llm.with_structured_output(FinalOrder)
     
@@ -184,12 +195,14 @@ def chief_trader_node(state: AgentState) -> Dict[str, Any]:
         }
         return {"final_order": final_order_dict, "error_flag": False}
     except Exception as e:
-        print(f"LLM API completely failed after retries: {e}")
+        logger.error("LLM API completely failed in chief_trader: %s", e, extra={"trigger_id": trigger_id, "symbol": symbol})
         return {"error_flag": True}
 
 def execute_order_node(state: AgentState) -> Dict[str, Any]:
     """Node 4.5: Executes the order based on Chief Trader's decision."""
-    print("[Node 4.5] execute_order_node executed")
+    trigger_id = getattr(state, "trigger_id", "N/A")
+    symbol = getattr(state, "symbol", "EURUSD")
+    logger.info("[Node 4.5] execute_order_node executed", extra={"trigger_id": trigger_id, "symbol": symbol})
     final_order = getattr(state, "final_order", None)
     
     if not final_order:
@@ -243,7 +256,9 @@ def execute_order_node(state: AgentState) -> Dict[str, Any]:
 
 def risk_reviewer_node(state: AgentState) -> Dict[str, Any]:
     """Node 5: Risk Reviewer reviews a closed trade and logs the result."""
-    print("[Node 5] risk_reviewer_node executed")
+    trigger_id = getattr(state, "trigger_id", "N/A")
+    symbol = getattr(state, "symbol", "N/A")
+    logger.info("[Node 5] risk_reviewer_node executed", extra={"trigger_id": trigger_id, "symbol": symbol})
     llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
     structured_llm = llm.with_structured_output(ReviewLog)
     
@@ -321,8 +336,8 @@ def risk_reviewer_node(state: AgentState) -> Dict[str, Any]:
             },
         )
 
-        print(f"[Node 5] Review log saved to {file_path}")
+        logger.info("[Node 5] Review log saved to %s", file_path, extra={"trigger_id": trigger_id, "symbol": symbol})
         return {"review_log": review_log, "error_flag": False}
     except Exception as e:
-        print(f"LLM API completely failed after retries: {e}")
+        logger.error("LLM API completely failed in risk_reviewer: %s", e, extra={"trigger_id": trigger_id, "symbol": symbol})
         return {"error_flag": True}

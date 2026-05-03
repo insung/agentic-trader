@@ -1,3 +1,6 @@
+import datetime
+import logging
+
 from backend.core.state_models import Order, OrderResult
 from backend.core.exceptions import GuardrailViolationError, OrderExecutionError
 from backend.features.trading.guardrails import (
@@ -8,7 +11,36 @@ from backend.features.trading.guardrails import (
     validate_sl_tp_modification_limit
 )
 from backend.features.trading.adapters.mt5_execution import MT5Client
-import datetime
+
+logger = logging.getLogger(__name__)
+
+def is_mt5_success(result: dict) -> tuple[bool, str]:
+    """
+    Pure helper to determine if an MT5 execution was truly successful.
+    
+    Criteria:
+    1. Result must not be empty.
+    2. retcode must be 10009 (TRADE_RETCODE_DONE) or 10008 (TRADE_RETCODE_PLACED).
+    3. ticket (or order) must be > 0.
+    4. executed_price (or price) must be > 0.
+    """
+    if not result:
+        return False, "Empty response from MT5 adapter"
+    
+    retcode = result.get("retcode")
+    # 10009: Done, 10008: Placed (for some brokers/orders)
+    if retcode not in [10008, 10009]:
+        return False, f"MT5 error retcode: {retcode}, comment: {result.get('comment', 'No comment')}"
+    
+    ticket = result.get("order") or result.get("ticket") or 0
+    if ticket <= 0:
+        return False, f"Invalid ticket ID: {ticket}"
+    
+    price = result.get("price") or result.get("executed_price") or 0.0
+    if price <= 0:
+        return False, f"Invalid executed price: {price}"
+    
+    return True, ""
 
 class TradeExecutionUseCase:
     """
@@ -25,6 +57,10 @@ class TradeExecutionUseCase:
         today_trade_count: int, 
         account_balance: float,
         risk_per_trade_pct: float = 0.01,
+        trigger_id: str | None = None,
+        workflow_run_id: str | None = None,
+        rule_id: str | None = None,
+        mode: str = "live",
     ) -> OrderResult:
         """
         Executes a trade after passing all strict guardrails.
@@ -52,12 +88,36 @@ class TradeExecutionUseCase:
             raise GuardrailViolationError("Calculated lot size is 0 or negative.")
         
         order.lot_size = safe_lot_size # Override AI's lot size
+        log_base = {
+            "trigger_id": trigger_id,
+            "workflow_run_id": workflow_run_id,
+            "rule_id": rule_id,
+            "symbol": order.symbol,
+            "mode": mode,
+            "final_action": order.action.value,
+            "lot_size": order.lot_size,
+        }
+        logger.info(
+            "📐 Trade execution risk lot calculated for %s. lot=%.2f",
+            order.symbol,
+            order.lot_size,
+            extra={**log_base, "event": "trigger.risk_lot.calculated"},
+        )
 
         # 5. Execute via MT5 Adapter
         try:
-            # Assuming mt5.send_order returns a ticket ID or dict. We adapt it.
-            # In a real scenario we need to match the signature of mt5.send_order
-            # For now, we simulate success or pass to actual adapter if it exists.
+            # result is guaranteed to be a dict by the adapter (Step 4)
+            logger.info(
+                "📤 MT5 execution requested for %s.",
+                order.symbol,
+                extra={
+                    **log_base,
+                    "event": "trigger.execution.requested",
+                    "requested_entry_price": order.entry_price,
+                    "requested_sl": order.sl_price,
+                    "requested_tp": order.tp_price,
+                },
+            )
             result = self.mt5.send_order(
                 symbol=order.symbol,
                 order_type=order.action.value,
@@ -66,11 +126,89 @@ class TradeExecutionUseCase:
                 sl=order.sl_price,
                 tp=order.tp_price
             )
+            
+            if not isinstance(result, dict):
+                # Defensive check for safety
+                result = {"retcode": -99, "comment": f"Unexpected result type: {type(result)}", "raw": str(result)}
+
+            logger.info(
+                "📥 MT5 execution response for %s. retcode=%s order=%s price=%s",
+                order.symbol,
+                result.get("retcode"),
+                result.get("order") or result.get("ticket"),
+                result.get("price") or result.get("executed_price"),
+                extra={
+                    **log_base,
+                    "event": "trigger.execution.mt5_response",
+                    "mt5_retcode": result.get("retcode"),
+                    "mt5_order": result.get("order") or result.get("ticket"),
+                    "mt5_price": result.get("price") or result.get("executed_price"),
+                },
+            )
+
+            # Step 3: Use helper to determine actual success
+            is_success, failure_reason = is_mt5_success(result)
+            logger.info(
+                "🧾 MT5 success predicate for %s. success=%s reason=%s",
+                order.symbol,
+                is_success,
+                failure_reason or "",
+                extra={
+                    **log_base,
+                    "event": "trigger.execution.success_predicate",
+                    "success": is_success,
+                    "failure_reason": failure_reason or None,
+                },
+            )
+            
+            # Step 2 & 3 & 4: Enriched OrderResult with preserved raw response
             return OrderResult(
-                success=True,
+                success=is_success,
                 ticket=result.get("order"),
                 executed_price=result.get("price"),
-                timestamp=datetime.datetime.now().isoformat()
+                timestamp=datetime.datetime.now().isoformat(),
+                
+                # Context & Request
+                mode=mode,
+                symbol=order.symbol,
+                action=order.action.value,
+                requested_lot=order.lot_size,
+                requested_entry_price=order.entry_price,
+                requested_sl=order.sl_price,
+                requested_tp=order.tp_price,
+                risk_pct=risk_per_trade_pct,
+                safe_lot=order.lot_size,
+                
+                # MT5 Response mapping
+                mt5_retcode=result.get("retcode"),
+                mt5_comment=result.get("comment"),
+                mt5_order=result.get("order"),
+                mt5_deal=result.get("deal"),
+                mt5_price=result.get("price"),
+                mt5_request_id=result.get("request_id"),
+                
+                # Full record (JSON serializable dict)
+                raw_response=result,
+                failure_reason=failure_reason if not is_success else None
             )
         except Exception as e:
-            raise OrderExecutionError(f"MT5 execution failed: {str(e)}")
+            # For unexpected infrastructure exceptions
+            logger.exception(
+                "💥 MT5 execution raised infrastructure error for %s.",
+                order.symbol,
+                extra={
+                    **log_base,
+                    "event": "trigger.execution.failed",
+                    "failure_reason": str(e),
+                },
+            )
+            return OrderResult(
+                success=False,
+                error_message=str(e),
+                failure_reason=f"Infrastructure error: {str(e)}",
+                timestamp=datetime.datetime.now().isoformat(),
+                mode=mode,
+                symbol=order.symbol,
+                action=order.action.value,
+                raw_response={"exception": str(e)}
+            )

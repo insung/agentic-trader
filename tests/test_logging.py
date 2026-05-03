@@ -176,3 +176,34 @@ async def test_trading_service_logs_price_guardrail_rejection(caplog):
     assert rejected.rule_id == "rule_reject"
     assert rejected.blocked_stage == "price_guardrail"
     assert "Invalid SL/TP" in rejected.failure_reason
+
+
+@pytest.mark.asyncio
+async def test_trading_service_logs_node_and_snapshot_events(caplog):
+    graph = MagicMock()
+    # Mock stream to emit two nodes
+    graph.stream.return_value = [
+        {"tech_analyst": {"tech_summary": {"trend": "bullish"}}},
+        {"chief_trader": {"final_order": {"action": "HOLD"}}}
+    ]
+
+    caplog.set_level(logging.INFO)
+    with patch("backend.services.trading_service.get_compiled_graph", return_value=graph), \
+         patch("backend.services.trading_service.create_trigger_run", return_value="trig_node"), \
+         patch("backend.services.trading_service.update_trigger_run"), \
+         patch("backend.services.trading_service.add_trigger_event"), \
+         patch("backend.services.trading_service.save_trigger_snapshot"):
+        await run_trading_workflow_async("BTCUSD", ["M15"], mode="paper", trigger_id="trig_node")
+
+    events = _events(caplog)
+    assert "trigger.workflow.node_completed" in events
+    assert "trigger.snapshot.saved" in events
+
+    node_logs = _records_with_event(caplog, "trigger.workflow.node_completed")
+    assert len(node_logs) == 2
+    assert node_logs[0].node_name == "tech_analyst"
+    assert node_logs[1].node_name == "chief_trader"
+
+    snapshot_logs = _records_with_event(caplog, "trigger.snapshot.saved")
+    assert len(snapshot_logs) == 1
+    assert snapshot_logs[0].trigger_id == "trig_node"

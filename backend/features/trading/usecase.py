@@ -32,9 +32,9 @@ def is_mt5_success(result: dict) -> tuple[bool, str]:
     if retcode not in [10008, 10009]:
         return False, f"MT5 error retcode: {retcode}, comment: {result.get('comment', 'No comment')}"
     
-    ticket = result.get("order") or result.get("ticket") or 0
+    ticket = result.get("deal") or result.get("order") or result.get("ticket") or 0
     if ticket <= 0:
-        return False, f"Invalid ticket ID: {ticket}"
+        return False, f"Invalid ticket/deal ID: {ticket}"
     
     price = result.get("price") or result.get("executed_price") or 0.0
     if price <= 0:

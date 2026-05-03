@@ -43,7 +43,7 @@ def test_is_mt5_success_zero_ticket():
     }
     success, reason = is_mt5_success(result)
     assert success is False
-    assert "Invalid ticket ID: 0" in reason
+    assert "Invalid ticket/deal ID: 0" in reason
 
 def test_is_mt5_success_zero_price():
     result = {
@@ -66,3 +66,14 @@ def test_is_mt5_success_none():
     success, reason = is_mt5_success(None)
     assert success is False
     assert "Empty response" in reason
+
+def test_is_mt5_success_deal_only():
+    result = {
+        "retcode": 10009,
+        "deal": 55555,
+        "price": 65000.0,
+        "comment": "Done with deal"
+    }
+    success, reason = is_mt5_success(result)
+    assert success is True
+    assert reason == ""

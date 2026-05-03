@@ -152,6 +152,11 @@ async def run_trading_workflow_async(
             "guardrail_result": guardrail_result,
             "strategy_snapshot": _model_to_dict(final_state.get("strategy_hypothesis"))
         })
+        logger.info(
+            "📸 Trading Service: Snapshot saved for %s.",
+            symbol,
+            extra=log_extra("trigger.snapshot.saved", final_action=final_action, run_status=status),
+        )
 
     try:
         # 2. Run LangGraph
@@ -214,6 +219,11 @@ async def run_trading_workflow_async(
                                 payload=payload)
 
             add_trigger_event(None, trigger_id, "node_completed", node_name=node_name)
+            logger.info(
+                "Workflow node completed: %s",
+                node_name,
+                extra=log_extra("trigger.workflow.node_completed", node_name=node_name),
+            )
 
         add_trigger_event(None, trigger_id, "workflow_completed")
 
@@ -471,13 +481,24 @@ async def run_trading_workflow_async(
                 return
             
             result = execute_mock_order(symbol, action, safe_lot, sl, tp, entry_price)
-            success = result.get("retcode") == 10009
+            success = result.get("success")
+            if success is None:
+                success = result.get("retcode") == 10009
             order_result_data = {
                 "success": success,
-                "ticket": result.get("order"),
-                "executed_price": result.get("price"),
-                "timestamp": result.get("time") or datetime.now(timezone.utc).isoformat(),
-                "raw_response": result
+                "mode": "paper",
+                "symbol": symbol,
+                "action": action,
+                "requested_entry_price": entry_price,
+                "requested_lot": safe_lot,
+                "requested_sl": sl,
+                "requested_tp": tp,
+                "safe_lot": safe_lot,
+                "failure_reason": None if success else "Mock execution failed",
+                "ticket": result.get("ticket") or result.get("order"),
+                "executed_price": result.get("executed_price") or result.get("price"),
+                "timestamp": result.get("timestamp") or datetime.now(timezone.utc).isoformat(),
+                "raw_response": result.get("raw_response") or result
             }
             order.lot_size = safe_lot
 

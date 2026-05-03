@@ -82,8 +82,9 @@ async def test_success_live_execution_api(mock_snapshot, mock_events):
                 "execution_details": {
                     "success": True,
                     "ticket": 12345,
+                    "deal": 98765432,
                     "executed_price": 65000.5,
-                    "raw_response": {"retcode": 10009, "order": 12345, "price": 65000.5}
+                    "raw_response": {"retcode": 10009, "order": 12345, "deal": 98765432, "price": 65000.5}
                 }
             }
         }
@@ -96,6 +97,9 @@ async def test_success_live_execution_api(mock_snapshot, mock_events):
     
     snapshot = await get_trigger_execution_snapshot(trigger_id)
     assert snapshot["guardrail_result"]["success"] is True
+    assert snapshot["guardrail_result"]["details"]["execution_details"]["ticket"] == 12345
+    assert snapshot["guardrail_result"]["details"]["execution_details"]["deal"] == 98765432
+    assert snapshot["guardrail_result"]["details"]["execution_details"]["executed_price"] == 65000.5
 
 # 3. History filter test
 @patch("backend.api.v1.triggers.get_trigger_history")

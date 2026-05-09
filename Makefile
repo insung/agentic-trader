@@ -32,8 +32,8 @@ run-wine:
 
 # 수동 트리거 (종목 선택 가능)
 trigger:
-	@echo "Triggering a manual $(MODE) trade for $(SYMBOL) on $(TIMEFRAMES)..."
-	@TF_JSON=$$(python3 -c 'import json; print(json.dumps("$(TIMEFRAMES)".split(",")))'); \
+	@echo "Triggering a manual $(MODE) trade for $(SYMBOL) on $(TRIGGER_TIMEFRAMES)..."
+	@TF_JSON=$$(python3 -c 'import json; print(json.dumps("$(TRIGGER_TIMEFRAMES)".split(",")))'); \
 	curl -s -X POST "http://127.0.0.1:$(PORT)/api/v1/trade/trigger" \
 		-H "Content-Type: application/json" \
 		-d "{\"symbol\": \"$(SYMBOL)\", \"timeframes\": $$TF_JSON, \"mode\": \"$(MODE)\"}" | python3 -m json.tool
@@ -57,8 +57,8 @@ install-quant: install
 	$(VENV_BIN)/pip install -r requirements-quant.txt
 
 # --- Backtesting Commands ---
-TIMEFRAMES ?= M15,M30
 TIMEFRAME ?= M15
+TIMEFRAMES ?=
 DAYS ?= 30
 FROM ?=
 TO ?=
@@ -69,7 +69,24 @@ NO_REVIEW ?= 0
 LOG_FILE ?=
 LOG_LEVEL ?= TRACE
 
-BACKTEST_ARGS = --data-db "$(DATA_DB)" --symbol $(SYMBOL) --timeframes $(TIMEFRAMES) --risk-pct $(RISK_PCT) --step $(STEP) --report
+DEFAULT_TIMEFRAMES := M15,M30
+TRIGGER_TIMEFRAMES := $(strip $(TIMEFRAMES))
+ifeq ($(TRIGGER_TIMEFRAMES),)
+TRIGGER_TIMEFRAMES := $(DEFAULT_TIMEFRAMES)
+endif
+BACKTEST_RUN_TIMEFRAMES := $(strip $(TIMEFRAMES))
+ifeq ($(BACKTEST_RUN_TIMEFRAMES),)
+BACKTEST_RUN_TIMEFRAMES := $(DEFAULT_TIMEFRAMES)
+endif
+BACKTEST_FETCH_TIMEFRAMES := $(strip $(TIMEFRAMES))
+ifeq ($(BACKTEST_FETCH_TIMEFRAMES),)
+BACKTEST_FETCH_TIMEFRAMES := $(strip $(TIMEFRAME))
+endif
+ifeq ($(BACKTEST_FETCH_TIMEFRAMES),)
+BACKTEST_FETCH_TIMEFRAMES := $(DEFAULT_TIMEFRAMES)
+endif
+
+BACKTEST_ARGS = --data-db "$(DATA_DB)" --symbol $(SYMBOL) --timeframes $(BACKTEST_RUN_TIMEFRAMES) --risk-pct $(RISK_PCT) --step $(STEP) --report
 ifneq ($(START_STEP),)
 BACKTEST_ARGS += --start-step $(START_STEP)
 endif
@@ -88,10 +105,10 @@ endif
 
 # 과거 데이터 수집 (예: make backtest-fetch SYMBOL=EURUSD FROM=2023-01-01 TO=2023-01-31)
 backtest-fetch:
-	@echo "Fetching historical data for $(SYMBOL) on $(TIMEFRAMES)..."
+	@echo "Fetching historical data for $(SYMBOL) on $(BACKTEST_FETCH_TIMEFRAMES)..."
 	WINEPREFIX=$(WINEPREFIX) PYTHONPATH=. wine python -m backend.scripts.fetch_history \
 		--symbol $(SYMBOL) \
-		--timeframes $(TIMEFRAMES) \
+		--timeframes $(BACKTEST_FETCH_TIMEFRAMES) \
 		--days $(DAYS) \
 		--from "$(FROM)" \
 		--to "$(TO)" \
@@ -139,6 +156,10 @@ BREAKOUT_RSI_UPPERS ?= 45,50
 MACD_FAST_WINDOWS ?= 12
 MACD_SLOW_WINDOWS ?= 26
 MACD_SIGNAL_WINDOWS ?= 9
+VEB_LOOKBACKS ?= 30,45,60
+VEB_ATR_EXPANSIONS ?= 1.5,2.0
+VEB_ADX_MINS ?= 20,25
+VEB_SL_ATR_BUFFERS ?= 0.5
 RANDOM_SEED ?= 42
 RANDOM_ENTRY_PROB ?= 0.01
 RANDOM_LONG_BIAS ?= 0.5
@@ -203,6 +224,10 @@ quant-run: venv
 		--macd-fast-windows "$(MACD_FAST_WINDOWS)" \
 		--macd-slow-windows "$(MACD_SLOW_WINDOWS)" \
 		--macd-signal-windows "$(MACD_SIGNAL_WINDOWS)" \
+		--veb-lookbacks "$(VEB_LOOKBACKS)" \
+		--veb-atr-expansions "$(VEB_ATR_EXPANSIONS)" \
+		--veb-adx-mins "$(VEB_ADX_MINS)" \
+		--veb-sl-atr-buffers "$(VEB_SL_ATR_BUFFERS)" \
 		--random-seed $(RANDOM_SEED) \
 		--random-entry-prob $(RANDOM_ENTRY_PROB) \
 		--random-long-bias $(RANDOM_LONG_BIAS) \

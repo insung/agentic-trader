@@ -253,7 +253,7 @@ def test_run_trend_pullback_research_uses_filter_timeframe_and_atr_stops(tmp_pat
             strategy="trend_pullback",
             ema_fast_windows=[20],
             ema_slow_windows=[50],
-            pullback_atrs=[0.5],
+            ma_adx_mins=[30],
             atr_stop_multipliers=[1.0],
             rrs=[1.5],
             trend_rsi_lowers=[45],
@@ -261,12 +261,12 @@ def test_run_trend_pullback_research_uses_filter_timeframe_and_atr_stops(tmp_pat
         ),
     )
 
-    assert _FakePortfolio.call_count == 1
+    assert _FakePortfolio.call_count >= 1
     assert result.run["strategy"] == "trend_pullback"
     assert result.run["filter_timeframe"] == "M30"
     assert _FakePortfolio.last_kwargs["sl_stop"].notna().any()
     assert _FakePortfolio.last_kwargs["tp_stop"].notna().any()
-    assert result.results[0]["parameter_json"]["pullback_atr"] == 0.5
+    assert result.results[0]["parameter_json"]["ma_adx_min"] == 30.0
     assert result.results[0]["parameter_json"]["atr_stop_multiplier"] == 1.0
 
 

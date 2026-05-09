@@ -11,6 +11,18 @@
         "M15",
         "M30"
       ],
+      "profiles": [
+        {
+          "name": "default",
+          "allowed_symbols": [
+            "BTCUSD"
+          ],
+          "primary_timeframe": "M15",
+          "confirmation_timeframes": [
+            "M30"
+          ]
+        }
+      ],
       "description": "Mean reversion strategy for ranging markets or high volatility extremes."
     },
     {
@@ -24,8 +36,56 @@
         "M15",
         "M30"
       ],
+      "profiles": [
+        {
+          "name": "btc_intraday",
+          "allowed_symbols": [
+            "BTCUSD"
+          ],
+          "primary_timeframe": "M15",
+          "confirmation_timeframes": [
+            "M30"
+          ]
+        }
+      ],
       "minimum_risk_reward": 2.0,
       "description": "Trend-following crossover with M30 confirmation and ADX-based validation."
+    },
+    {
+      "name": "RSI Trend Pullback",
+      "file": "rsi_trend_pullback.md",
+      "allowed_regimes": [
+        "Bullish",
+        "Bearish"
+      ],
+      "required_timeframes": [
+        "M15",
+        "H1"
+      ],
+      "profiles": [
+        {
+          "name": "btc_intraday",
+          "allowed_symbols": [
+            "BTCUSD"
+          ],
+          "primary_timeframe": "M15",
+          "confirmation_timeframes": [
+            "H1"
+          ]
+        },
+        {
+          "name": "nas100_h1",
+          "allowed_symbols": [
+            "NAS100ft.r"
+          ],
+          "primary_timeframe": "H1",
+          "confirmation_timeframes": [
+            "H4"
+          ]
+        }
+      ],
+      "minimum_risk_reward": 2.0,
+      "description": "Trend continuation strategy combining EMA/ADX trend filters with RSI pullbacks."
     }
   ]
 }

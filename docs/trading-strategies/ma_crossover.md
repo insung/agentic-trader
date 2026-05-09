@@ -8,9 +8,6 @@ minimum_risk_reward: 2.0
 required_timeframes:
   - M15
   - M30
-allowed_regimes:
-  - Bullish
-  - Bearish
 primary_timeframe: M15
 confirmation_timeframes:
   - M30
@@ -31,7 +28,7 @@ indicators:
 - 현재 deterministic validator와 quant baseline은 구현되어 있습니다.
 - 다만 paper/live 승격은 아직 끝나지 않았습니다.
 - 승격 여부는 월별 walk-forward, No-Trade Audit, validator 통과 여부를 함께 보고 판단합니다.
-- 최근 6개월 BTCUSD M15/M30 quant 결과는 강했지만, 이 문서는 그 결과를 "승격 후보"로만 취급합니다.
+- 최근 여러 타임프레임 프로필(Profile)에서 강한 성과를 보였으나, 이 문서는 그 결과를 "승격 후보"로만 취급합니다.
 
 ## Runtime Contract
 
@@ -39,7 +36,7 @@ indicators:
 - 주문 가능 여부는 `backend/features/trading/strategy_validators.py`의 deterministic gate가 최종 판단합니다.
 - 새로 추가하거나 수정한 조건은 `backend/config/strategies_config.json`, validator, 단위 테스트와 함께 맞춰야 합니다.
 - LLM은 계산을 직접 추정하지 말고 Python이 제공한 indicator snapshot의 값을 근거로만 판단해야 합니다.
-- 연구용 quant baseline에서 사용한 핵심 조건은 M15 진입 + M30 confirmation, recent cross age, ADX14, ATR14 기반 SL/TP입니다.
+- 연구용 quant baseline에서 사용한 핵심 조건은 주 진입(Primary) 타임프레임 진입 + 상위(Confirmation) 타임프레임 확인, recent cross age, ADX14, ATR14 기반 SL/TP입니다.
 
 ## 1. 전략 개요 (Overview)
 - **종류:** 추세 추종 매매 (Trend Following)
@@ -53,7 +50,7 @@ indicators:
 2.  **가격 위치 확인:** 현재 캔들이 EMA 20 위에 위치해야 합니다.
 3.  **추세 보조 확인:** ADX(Average Directional Index)가 25 이상이면 추세 강도가 충분하다고 판단합니다.
 4.  **트리거:** 교차가 확인된 캔들이 마감된 이후, 다음 캔들의 시가에서 진입합니다. (캔들 마감 전 섣부른 진입 금지)
-5.  **상위 타임프레임 확인:** M30이 M15와 같은 방향으로 정렬되어 있어야 합니다.
+5.  **상위 타임프레임 확인 (Confirmation Timeframe):** 상위 타임프레임이 주 진입 타임프레임과 같은 상승 방향으로 정렬되어 있어야 합니다.
 6.  **추격 진입 차단:** 최근 교차가 너무 오래된 경우는 진입하지 않습니다.
 
 ### B. 숏(매도) 진입: 데드 크로스
@@ -61,7 +58,7 @@ indicators:
 2.  **가격 위치 확인:** 현재 캔들이 EMA 20 아래에 위치해야 합니다.
 3.  **추세 보조 확인:** ADX가 25 이상이어야 합니다.
 4.  **트리거:** 교차가 확인된 캔들이 마감된 이후, 다음 캔들의 시가에서 진입합니다.
-5.  **상위 타임프레임 확인:** M30이 M15와 같은 하락 방향으로 정렬되어 있어야 합니다.
+5.  **상위 타임프레임 확인 (Confirmation Timeframe):** 상위 타임프레임이 주 진입 타임프레임과 같은 하락 방향으로 정렬되어 있어야 합니다.
 6.  **추격 진입 차단:** 최근 교차가 너무 오래된 경우는 진입하지 않습니다.
 
 ## 3. 청산 조건 (Exit Rules)
@@ -93,7 +90,7 @@ Python validator는 최소한 아래 조건을 다시 검산합니다.
 - `ATR_STOP_MULTIPLIER=1.0`
 - `RR=1.3,1.5,2.0`
 
-최근 6개월 BTCUSD M15/M30 구간에서는 이 baseline이 다른 deterministic baseline보다 강했습니다.
+최근 6개월 구간에서는 이 baseline이 다른 deterministic baseline보다 강했습니다.
 다만 paper/live 승격은 quant 결과만으로 하지 않으며, validator와 No-Trade Audit까지 함께 확인합니다.
 
 ## 6. 위험 경고 (AI 가이드라인)

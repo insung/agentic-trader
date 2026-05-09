@@ -18,7 +18,7 @@ async def list_symbols():
         "AUDUSD": "Australian Dollar / US Dollar",
         "XAUUSD": "Gold / US Dollar",
         "BTCUSD": "Bitcoin / US Dollar",
-        "US100": "Nasdaq 100 Index",
+        "NAS100ft.r": "Nasdaq 100 Index",
     }
     return [
         SymbolInfo(symbol=s, description=descriptions.get(s, s))

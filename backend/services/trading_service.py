@@ -15,6 +15,7 @@ from backend.features.trading.adapters.paper_execution import execute_mock_order
 from backend.core.state_models import Order, OrderAction, OrderResult
 from backend.features.trading.guardrails import validate_order_prices, enforce_one_percent_rule
 from backend.features.trading.strategy_validators import validate_strategy_setup
+from backend.workflows.strategy_registry import resolve_strategy_profile, load_strategy_contract
 from backend.features.trading.operations.position_tracker import build_decision_context, track_open_position
 from backend.features.trading.usecase import TradeExecutionUseCase
 from backend.features.trading.persistence.trigger_store import (
@@ -269,7 +270,53 @@ async def run_trading_workflow_async(
         account_balance = final_state.get("account_info", {}).get("balance", 10000.0)
         risk_per_trade_pct = float(os.environ.get("RISK_PER_TRADE_PCT", "0.005"))
         
-        # Price Direction & R/R Guardrail
+        strategy_hypothesis = final_state.get("strategy_hypothesis", {})
+        selected_strategy = str(strategy_hypothesis.get("selected_strategy", ""))
+        strategy_contract = load_strategy_contract(selected_strategy)
+        ptf, ctf = resolve_strategy_profile(strategy_contract, timeframes, symbol)
+        
+        if ptf is None:
+            reason = f"No valid strategy profile found for symbol={symbol}, timeframes={timeframes}"
+            logger.warning("🛡️ Trading Service: %s", reason)
+            add_trigger_event(None, trigger_id, "guardrail_rejected", message=reason)
+            finalize_run(status="blocked", final_action=action, error_message=reason, guardrail_result={"reason": reason})
+            return
+            
+        # 1. Strategy Specific Validator & Override
+        setup_ok, setup_reason, overridden_sl, overridden_tp = validate_strategy_setup(
+            action,
+            entry_price,
+            sl,
+            strategy_hypothesis,
+            final_state.get("indicator_data", {}),
+            primary_timeframe=ptf,
+            confirmation_timeframes=ctf,
+        )
+        if not setup_ok:
+            logger.warning(
+                "🛡️ Trading Service: Strategy Validator REJECTED. %s",
+                setup_reason,
+                extra=log_extra(
+                    "trigger.strategy_validator.rejected",
+                    blocked_stage="strategy_validator",
+                    failure_reason=setup_reason,
+                    final_action=action,
+                )
+            )
+            add_trigger_event(None, trigger_id, "guardrail_rejected", message=setup_reason)
+            finalize_run(status="blocked", final_action=action, error_message=setup_reason, guardrail_result={
+                "type": "strategy_validator",
+                "success": False,
+                "message": setup_reason
+            })
+            return
+            
+        if overridden_sl is not None:
+            sl = overridden_sl
+        if overridden_tp is not None:
+            tp = overridden_tp
+
+        # 2. Price Direction & R/R Guardrail
         price_ok = validate_order_prices(action, entry_price, sl, tp)
         if not price_ok:
             reject_reason = f"Invalid SL/TP or Risk/Reward (entry={entry_price}, sl={sl}, tp={tp})"
@@ -289,33 +336,6 @@ async def run_trading_workflow_async(
                 "success": False,
                 "message": reject_reason,
                 "data": {"entry": entry_price, "sl": sl, "tp": tp}
-            })
-            return
-
-        # Strategy Specific Validator
-        setup_ok, setup_reason = validate_strategy_setup(
-            action,
-            entry_price,
-            sl,
-            final_state.get("strategy_hypothesis", {}),
-            final_state.get("indicator_data", {}),
-        )
-        if not setup_ok:
-            logger.warning(
-                "🛡️ Trading Service: Strategy Validator REJECTED. %s",
-                setup_reason,
-                extra=log_extra(
-                    "trigger.strategy_validator.rejected",
-                    blocked_stage="strategy_validator",
-                    failure_reason=setup_reason,
-                    final_action=action,
-                )
-            )
-            add_trigger_event(None, trigger_id, "guardrail_rejected", message=setup_reason)
-            finalize_run(status="blocked", final_action=action, error_message=setup_reason, guardrail_result={
-                "type": "strategy_validator",
-                "success": False,
-                "message": setup_reason
             })
             return
 

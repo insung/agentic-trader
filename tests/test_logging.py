@@ -168,7 +168,9 @@ async def test_trading_service_logs_price_guardrail_rejection(caplog):
          patch("backend.services.trading_service.create_trigger_run", return_value="trig_reject"), \
          patch("backend.services.trading_service.update_trigger_run"), \
          patch("backend.services.trading_service.add_trigger_event"), \
-         patch("backend.services.trading_service.save_trigger_snapshot"):
+         patch("backend.services.trading_service.save_trigger_snapshot"), \
+         patch("backend.services.trading_service.resolve_strategy_profile", return_value=("M15", ["M30"])), \
+         patch("backend.services.trading_service.validate_strategy_setup", return_value=(True, "OK", None, None)):
         await run_trading_workflow_async("BTCUSD", ["M15"], mode="paper", rule_id="rule_reject")
 
     rejected = _records_with_event(caplog, "trigger.guardrail.rejected")[0]

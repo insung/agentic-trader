@@ -6,7 +6,7 @@ from backend.features.trading.adapters.mt5_connection import mt5
 
 SUPPORTED_SYMBOLS = [
     "EURUSD", "GBPUSD", "USDJPY", "AUDUSD",
-    "XAUUSD", "BTCUSD", "US100",
+    "XAUUSD", "BTCUSD", "NAS100ft.r",
 ]
 
 TIMEFRAME_MAP = {

@@ -52,6 +52,7 @@
 
 - [Strategy Research Pivot](./research/strategy-research-pivot.md)
 - [Quant Research Next Steps](./research/quant-research-next-steps.md)
+- [RSI Trend Pullback Research](./research/rsi_trend_pullback_0503.md)
 
 ## Roadmap
 

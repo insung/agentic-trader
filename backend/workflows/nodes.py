@@ -128,7 +128,7 @@ def strategist_node(state: AgentState) -> Dict[str, Any]:
     tech_summary_data = getattr(state, 'tech_summary', {})
     market_regime = tech_summary_data.get('market_regime', 'Ranging')
     timeframes = getattr(state, "timeframes", ["M5"])
-    strategies_kb = _read_strategies(market_regime, timeframes)
+    strategies_kb = _read_strategies(market_regime, timeframes, symbol)
     
     human_content = f"Here is the Tech Summary:\n{getattr(state, 'tech_summary', {})}\n\n"
     human_content += f"Available Trading Strategies (Knowledge Base):\n{strategies_kb}"
@@ -229,9 +229,9 @@ def execute_order_node(state: AgentState) -> Dict[str, Any]:
     entry_price = current_price.get("ask", 0.0) if action.upper() == "BUY" else current_price.get("bid", 0.0)
     if entry_price <= 0:
         return {"order_result": {"success": False, "error_message": "Could not get current price", "timestamp": datetime.now().isoformat()}}
-    if not validate_order_prices(action, entry_price, sl, tp):
-        return {"order_result": {"success": False, "error_message": "Guardrail: invalid SL/TP direction or risk/reward", "timestamp": datetime.now().isoformat()}}
-    setup_ok, setup_reason = validate_strategy_setup(
+
+    # 1. Strategy Specific Validator & Override
+    setup_ok, setup_reason, overridden_sl, overridden_tp = validate_strategy_setup(
         action,
         entry_price,
         sl,
@@ -240,6 +240,16 @@ def execute_order_node(state: AgentState) -> Dict[str, Any]:
     )
     if not setup_ok:
         return {"order_result": {"success": False, "error_message": f"Guardrail: {setup_reason}", "timestamp": datetime.now().isoformat()}}
+        
+    if overridden_sl is not None:
+        sl = overridden_sl
+    if overridden_tp is not None:
+        tp = overridden_tp
+
+    # 2. Price Direction & R/R Guardrail
+    if not validate_order_prices(action, entry_price, sl, tp):
+        return {"order_result": {"success": False, "error_message": "Guardrail: invalid SL/TP direction or risk/reward", "timestamp": datetime.now().isoformat()}}
+
     lot_size = enforce_one_percent_rule(balance, entry_price, sl)
     
     if lot_size <= 0:

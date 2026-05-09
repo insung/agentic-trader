@@ -7,9 +7,6 @@ validator: backend/features/trading/strategy_validators.py
 required_timeframes:
   - M15
   - M30
-allowed_regimes:
-  - Ranging
-  - High Volatility
 primary_timeframe: M15
 confirmation_timeframes:
   - M30

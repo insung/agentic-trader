@@ -184,7 +184,15 @@ validator가 없는 전략은 live/paper 주문으로 승격하지 않습니다.
 - DB schema 변경: migration/compatibility 테스트 추가 또는 기존 데이터 호환 확인.
 - API router 변경: endpoint response와 error path 테스트 추가/수정.
 
-## 11. Refactor Rules
+## 11. Python Coding Rules
+
+모든 Python 코드는 PEP 8 스타일 가이드를 준수하며, 아래 규칙을 엄격히 따릅니다.
+
+- **No Local Imports:** 모든 `import` 문은 반드시 파일 최상단(top-level)에 위치해야 합니다.
+- 함수나 클래스 메서드 내부에서 `import`를 호출하는 지역 임포트는 어떤 경우에도 금지합니다.
+- 의존성 구조를 설계할 때부터 순환 참조가 발생하지 않도록 vertical slice 원칙을 준수하십시오.
+
+## 12. Refactor Rules
 
 구조 개선은 동작 보존을 우선합니다.
 

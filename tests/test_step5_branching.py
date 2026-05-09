@@ -61,7 +61,8 @@ async def test_live_execution_branching(
     ]
     
     # Mock validate_strategy_setup to ensure it doesn't block the path
-    with patch("backend.services.trading_service.validate_strategy_setup", return_value=(True, "Success")):
+    with patch("backend.services.trading_service.resolve_strategy_profile", return_value=("M15", ["M30"])), \
+         patch("backend.services.trading_service.validate_strategy_setup", return_value=(True, "Success", None, None)):
         # Test Case A: Live Failure (ticket=0)
         failed_result = OrderResult(
             success=False,

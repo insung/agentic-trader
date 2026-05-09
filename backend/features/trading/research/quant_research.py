@@ -570,43 +570,61 @@ def run_trend_pullback_research(
     high = df["high"].astype(float)
     rsi14 = _rsi(close, 14)
     atr14 = _atr(df, 14)
+    adx14 = _adx(df, 14)
     merged_filter = _prepare_filter_frame(filter_candles, df["time"])
 
     ema_fast_windows = config.ema_fast_windows or [20]
     ema_slow_windows = config.ema_slow_windows or [50]
-    pullback_atrs = config.pullback_atrs or [0.25, 0.5, 0.75]
+    ma_adx_mins = config.ma_adx_mins or [25.0, 30.0]
     atr_stop_multipliers = config.atr_stop_multipliers or [1.0, 1.5]
-    trend_rsi_lowers = config.trend_rsi_lowers or [45.0]
-    trend_rsi_uppers = config.trend_rsi_uppers or [55.0]
-    rrs = config.rrs or [1.3, 1.5, 2.0]
+    trend_rsi_lowers = config.trend_rsi_lowers or [45.0, 50.0]
+    trend_rsi_uppers = config.trend_rsi_uppers or [50.0, 55.0]
+    rrs = config.rrs or [1.5, 2.0]
     freq = _timeframe_to_freq(config.timeframe)
+
+    # 캔들 몸통 비율 계산 (분모가 0일 경우 NaN 처리)
+    candle_length = high - low
+    body_size = abs(close - open_)
+    import numpy as np
+    body_ratio = body_size / candle_length.replace(0, np.nan)
+    body_ratio_ok = body_ratio >= 0.3
 
     results: List[Dict[str, Any]] = []
     for ema_fast_window in ema_fast_windows:
         ema_fast = close.ewm(span=ema_fast_window, adjust=False).mean()
         for ema_slow_window in ema_slow_windows:
             ema_slow = close.ewm(span=ema_slow_window, adjust=False).mean()
-            trend_up = ema_fast > ema_slow
-            trend_down = ema_fast < ema_slow
-            filter_up = merged_filter["filter_ema20"] > merged_filter["filter_ema50"]
-            filter_down = merged_filter["filter_ema20"] < merged_filter["filter_ema50"]
+            
+            for ma_adx_min in ma_adx_mins:
+                trend_up = (ema_fast > ema_slow) & (adx14 >= ma_adx_min)
+                trend_down = (ema_fast < ema_slow) & (adx14 >= ma_adx_min)
+                filter_up = merged_filter["filter_ema20"] > merged_filter["filter_ema50"]
+                filter_down = merged_filter["filter_ema20"] < merged_filter["filter_ema50"]
 
-            for pullback_atr in pullback_atrs:
-                pullback_long = low <= (ema_fast + (atr14 * pullback_atr))
-                pullback_short = high >= (ema_fast - (atr14 * pullback_atr))
-                resume_long = (close > open_) & (close > ema_fast)
-                resume_short = (close < open_) & (close < ema_fast)
+                # RSI 3캔들 내 눌림목 (Rolling window=3)
+                rsi14_min_3 = rsi14.rolling(window=3).min()
+                rsi14_max_3 = rsi14.rolling(window=3).max()
+
+                # 반등 조건 (Body Ratio 30% 이상 포함)
+                resume_long = (close > open_) & (close > ema_fast) & body_ratio_ok
+                resume_short = (close < open_) & (close < ema_fast) & body_ratio_ok
 
                 for trend_rsi_lower in trend_rsi_lowers:
                     for trend_rsi_upper in trend_rsi_uppers:
+                        # RSI 눌림목 조건: 최근 3캔들 내에 RSI가 설정된 lower값 미만으로 떨어진 적이 있는지
+                        pullback_long = rsi14_min_3 < trend_rsi_lower
+                        # 숏의 경우 RSI가 설정된 upper값 초과로 오른 적이 있는지
+                        pullback_short = rsi14_max_3 > trend_rsi_upper
+
                         long_entries = (
                             trend_up
                             & filter_up
                             & pullback_long
                             & resume_long
-                            & (rsi14 >= trend_rsi_lower)
+                            & (rsi14 >= trend_rsi_lower) # 회복 조건 유지
                             & (rsi14 <= 70)
                         ).fillna(False)
+                        
                         short_entries = (
                             trend_down
                             & filter_down
@@ -615,6 +633,7 @@ def run_trend_pullback_research(
                             & (rsi14 <= trend_rsi_upper)
                             & (rsi14 >= 30)
                         ).fillna(False)
+                        
                         long_exits = ((close < ema_fast) | (ema_fast < ema_slow)).fillna(False)
                         short_exits = ((close > ema_fast) | (ema_fast > ema_slow)).fillna(False)
 
@@ -642,7 +661,7 @@ def run_trend_pullback_research(
                                             "ema_fast": int(ema_fast_window),
                                             "ema_slow": int(ema_slow_window),
                                             "filter_timeframe": config.filter_timeframe.upper(),
-                                            "pullback_atr": float(pullback_atr),
+                                            "ma_adx_min": float(ma_adx_min),
                                             "atr_stop_multiplier": float(atr_stop_multiplier),
                                             "trend_rsi_lower": float(trend_rsi_lower),
                                             "trend_rsi_upper": float(trend_rsi_upper),

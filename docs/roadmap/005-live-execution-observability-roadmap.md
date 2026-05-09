@@ -295,6 +295,17 @@ env PYTHONPATH=. .venv/bin/pytest tests/test_trigger_system.py -q -k "live or sn
 - [x] trigger event payload에는 사람이 빠르게 볼 수 있는 요약을 남긴다.
 - [x] trigger snapshot에는 상세 structured output을 남긴다.
 
+### Step 9 Follow-up Rules
+
+아래 두 항목은 트리거를 실제로 돌려서 검증할 수 있는 후속 규칙입니다.
+
+- [ ] prompt hash/version 정책: agent prompt 원문은 저장하지 않고, `prompt_version` 또는 `prompt_hash`만 event/snapshot 메타데이터에 남긴다.
+- [ ] output split 정책: 짧은 agent output은 event payload에 요약으로 남기고, 긴 structured output은 snapshot에만 상세로 남긴다.
+- [ ] 검증 시에는 event payload에서 `prompt_version` 또는 `prompt_hash`가 있는지 확인한다.
+- [ ] 검증 시에는 snapshot에서 상세 structured output과 요약본의 분리 여부를 확인한다.
+- [ ] 검증 시에는 prompt 원문이나 hidden reasoning이 저장되지 않았는지 확인한다.
+- [ ] 검증은 실제 live smoke가 아니라 mock trigger / paper trigger로 먼저 수행한다.
+
 ## Step 10: Design External Log Delivery
 
 목표: 추후 Discord 같은 메신저로 주요 운영 이벤트를 흘려보낼 수 있는 구조를 마련합니다.

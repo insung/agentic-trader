@@ -594,6 +594,36 @@ class BacktestEngine:
                     sl = float(final_order.get("sl_price", final_order.get("sl", 0.0)))
                     tp = float(final_order.get("tp_price", final_order.get("tp", 0.0)))
                     entry_price = float(mock_price["ask"] if action.upper() == "BUY" else mock_price["bid"])
+
+                    # 1. Strategy Specific Validator & Override
+                    setup_ok, setup_reason, overridden_sl, overridden_tp = validate_strategy_setup(
+                        action,
+                        entry_price,
+                        sl,
+                        final_state.get("strategy_hypothesis", {}),
+                        final_state.get("indicator_data", {}),
+                    )
+                    if not setup_ok:
+                        print(f"   ⛔ 전략 검증 실패: {setup_reason}")
+                        self._record_decision(current_time, action, "REJECTED", final_state, setup_reason, final_order)
+                        self.equity_curve.append({"time": str(current_time), "balance": self.balance, "action": "REJECTED"})
+                        self._emit_event(
+                            "step_complete",
+                            level="TRACE",
+                            step=step_num,
+                            candle_time=str(current_time),
+                            status="REJECTED",
+                            rejection_reason=setup_reason,
+                            elapsed_ms=round((time.perf_counter() - step_started_at) * 1000, 2),
+                        )
+                        continue
+
+                    if overridden_sl is not None:
+                        sl = overridden_sl
+                    if overridden_tp is not None:
+                        tp = overridden_tp
+
+                    # 2. Price Direction & R/R Guardrail
                     if not validate_order_prices(action, entry_price, sl, tp):
                         print(
                             f"   ⛔ 가드레일: SL/TP 방향 또는 손익비 오류 "
@@ -615,27 +645,6 @@ class BacktestEngine:
                             candle_time=str(current_time),
                             status="REJECTED",
                             rejection_reason="invalid SL/TP direction or risk/reward",
-                            elapsed_ms=round((time.perf_counter() - step_started_at) * 1000, 2),
-                        )
-                        continue
-                    setup_ok, setup_reason = validate_strategy_setup(
-                        action,
-                        entry_price,
-                        sl,
-                        final_state.get("strategy_hypothesis", {}),
-                        final_state.get("indicator_data", {}),
-                    )
-                    if not setup_ok:
-                        print(f"   ⛔ 전략 검증 실패: {setup_reason}")
-                        self._record_decision(current_time, action, "REJECTED", final_state, setup_reason, final_order)
-                        self.equity_curve.append({"time": str(current_time), "balance": self.balance, "action": "REJECTED"})
-                        self._emit_event(
-                            "step_complete",
-                            level="TRACE",
-                            step=step_num,
-                            candle_time=str(current_time),
-                            status="REJECTED",
-                            rejection_reason=setup_reason,
                             elapsed_ms=round((time.perf_counter() - step_started_at) * 1000, 2),
                         )
                         continue

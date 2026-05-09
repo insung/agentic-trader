@@ -89,7 +89,7 @@ def _ma_mtf_snapshot(action="BUY", m30_conflict=False, **m15_overrides):
 
 
 def test_ma_crossover_requires_recent_cross_and_atr_sized_stop():
-    ok, reason = validate_strategy_setup(
+    ok, reason, _, _ = validate_strategy_setup(
         "BUY",
         100.0,
         89.0,
@@ -98,7 +98,7 @@ def test_ma_crossover_requires_recent_cross_and_atr_sized_stop():
     )
     assert ok, reason
 
-    ok, reason = validate_strategy_setup(
+    ok, reason, _, _ = validate_strategy_setup(
         "BUY",
         100.0,
         95.0,
@@ -112,7 +112,7 @@ def test_ma_crossover_requires_recent_cross_and_atr_sized_stop():
 def test_ma_crossover_blocks_stale_or_absent_cross():
     data = _snapshot()
     data["M15"]["ema_cross_age_bars"]["bullish"] = 12
-    ok, reason = validate_strategy_setup(
+    ok, reason, _, _ = validate_strategy_setup(
         "BUY",
         100.0,
         89.0,
@@ -124,7 +124,7 @@ def test_ma_crossover_blocks_stale_or_absent_cross():
 
 
 def test_ma_crossover_blocks_higher_timeframe_conflict():
-    ok, reason = validate_strategy_setup(
+    ok, reason, _, _ = validate_strategy_setup(
         "SELL",
         96.0,
         107.0,
@@ -134,7 +134,7 @@ def test_ma_crossover_blocks_higher_timeframe_conflict():
     assert not ok
     assert "higher timeframe bullish conflict" in reason
 
-    ok, reason = validate_strategy_setup(
+    ok, reason, _, _ = validate_strategy_setup(
         "BUY",
         104.0,
         93.0,
@@ -146,7 +146,7 @@ def test_ma_crossover_blocks_higher_timeframe_conflict():
 
 
 def test_ma_crossover_allows_aligned_multi_timeframe_setup():
-    ok, reason = validate_strategy_setup(
+    ok, reason, _, _ = validate_strategy_setup(
         "SELL",
         96.0,
         107.0,
@@ -157,7 +157,7 @@ def test_ma_crossover_allows_aligned_multi_timeframe_setup():
 
 
 def test_ma_crossover_blocks_exhausted_band_entries():
-    ok, reason = validate_strategy_setup(
+    ok, reason, _, _ = validate_strategy_setup(
         "SELL",
         96.0,
         107.0,
@@ -167,7 +167,7 @@ def test_ma_crossover_blocks_exhausted_band_entries():
     assert not ok
     assert "oversold lower-band exhaustion" in reason
 
-    ok, reason = validate_strategy_setup(
+    ok, reason, _, _ = validate_strategy_setup(
         "BUY",
         104.0,
         93.0,
@@ -179,7 +179,7 @@ def test_ma_crossover_blocks_exhausted_band_entries():
 
 
 def test_ma_crossover_blocks_late_chase_near_bollinger_band():
-    ok, reason = validate_strategy_setup(
+    ok, reason, _, _ = validate_strategy_setup(
         "SELL",
         99561.75,
         100500.0,
@@ -200,7 +200,7 @@ def test_ma_crossover_blocks_late_chase_near_bollinger_band():
     assert not ok
     assert "late SELL chase" in reason
 
-    ok, reason = validate_strategy_setup(
+    ok, reason, _, _ = validate_strategy_setup(
         "BUY",
         109.8,
         98.0,
@@ -222,7 +222,7 @@ def test_ma_crossover_blocks_late_chase_near_bollinger_band():
 
 
 def test_ma_crossover_allows_aligned_setup_with_band_room():
-    ok, reason = validate_strategy_setup(
+    ok, reason, _, _ = validate_strategy_setup(
         "SELL",
         96.0,
         107.0,
@@ -239,7 +239,7 @@ def test_ma_crossover_allows_aligned_setup_with_band_room():
 
 
 def test_bollinger_short_blocks_unresolved_uptrend_without_overbought_rsi():
-    ok, reason = validate_strategy_setup(
+    ok, reason, _, _ = validate_strategy_setup(
         "SELL",
         100.0,
         111.0,
@@ -251,7 +251,7 @@ def test_bollinger_short_blocks_unresolved_uptrend_without_overbought_rsi():
 
 
 def test_unknown_strategy_is_rejected():
-    ok, reason = validate_strategy_setup(
+    ok, reason, _, _ = validate_strategy_setup(
         "BUY",
         100.0,
         89.0,

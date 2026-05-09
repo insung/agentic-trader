@@ -373,7 +373,8 @@ async def test_run_trading_workflow_async_order_failed_with_payload(mock_exec, m
          patch("backend.services.trading_service.add_trigger_event", side_effect=lambda db, tid, et, **kwargs: add_trigger_event(temp_trigger_db, tid, et, **kwargs)), \
          patch("backend.services.trading_service.save_trigger_snapshot", side_effect=lambda db, tid, data: save_trigger_snapshot(temp_trigger_db, tid, data)), \
          patch("backend.services.trading_service.validate_strategy_setup", return_value=(True, "OK", None, None)), \
-         patch("backend.services.trading_service.resolve_strategy_profile", return_value=("M15", ["M30"])):
+         patch("backend.services.trading_service.resolve_strategy_profile", return_value=("M15", ["M30"])), \
+         patch("backend.services.trading_service.track_open_position"):
         
         await run_trading_workflow_async("EURUSD", ["M5"], mode="paper")
         
@@ -504,7 +505,8 @@ async def test_run_trading_workflow_async_rich_success(mock_get_graph, temp_trig
          patch("backend.services.trading_service.add_trigger_event", side_effect=lambda db, tid, et, **kwargs: add_trigger_event(temp_trigger_db, tid, et, **kwargs)), \
          patch("backend.services.trading_service.save_trigger_snapshot", side_effect=lambda db, tid, data: save_trigger_snapshot(temp_trigger_db, tid, data)), \
          patch("backend.services.trading_service.validate_strategy_setup", return_value=(True, "OK", None, None)), \
-         patch("backend.services.trading_service.resolve_strategy_profile", return_value=("M15", ["M30"])):
+         patch("backend.services.trading_service.resolve_strategy_profile", return_value=("M15", ["M30"])), \
+         patch("backend.services.trading_service.track_open_position"):
         
         await run_trading_workflow_async("EURUSD", ["M5"], mode="paper")
         

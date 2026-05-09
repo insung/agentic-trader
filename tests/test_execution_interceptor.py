@@ -3,10 +3,23 @@ from unittest.mock import patch, MagicMock
 from backend.services.trading_service import run_trading_workflow
 
 @patch('backend.services.trading_service.resolve_strategy_profile', return_value=("M15", ["M30"]))
+@patch('backend.services.trading_service.save_trigger_snapshot')
+@patch('backend.services.trading_service.add_trigger_event')
+@patch('backend.services.trading_service.update_trigger_run')
+@patch('backend.services.trading_service.create_trigger_run', return_value="test_trigger")
 @patch('backend.services.trading_service.get_compiled_graph')
 @patch('backend.services.trading_service.track_open_position')
 @patch('backend.services.trading_service.execute_mock_order')
-def test_execution_interceptor(mock_execute, mock_track, mock_graph, mock_profile):
+def test_execution_interceptor(
+    mock_execute,
+    mock_track,
+    mock_graph,
+    mock_create_run,
+    mock_update_run,
+    mock_add_event,
+    mock_save_snapshot,
+    mock_profile,
+):
     """Paper Trading 모드에서 execution interceptor가 정상 작동하는지 확인."""
     mock_compiled = MagicMock()
     mock_execute.return_value = {

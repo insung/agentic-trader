@@ -51,8 +51,9 @@ async def test_llm_agent_visibility_events():
          patch("backend.services.trading_service.update_trigger_run"), \
          patch("backend.services.trading_service.add_trigger_event") as mock_add_event, \
          patch("backend.services.trading_service.save_trigger_snapshot"), \
-         patch("backend.services.trading_service.validate_strategy_setup", return_value=(True, "OK")), \
-         patch("backend.services.trading_service.execute_mock_order", return_value={"retcode": 10009, "order": 12345}):
+         patch("backend.services.trading_service.validate_strategy_setup", return_value=(True, "OK", None, None)), \
+         patch("backend.services.trading_service.execute_mock_order", return_value={"retcode": 10009, "order": 12345}), \
+         patch("backend.services.trading_service.track_open_position"):
         
         await run_trading_workflow_async(symbol, mode="paper", trigger_id=trigger_id)
         

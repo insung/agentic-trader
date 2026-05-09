@@ -285,13 +285,32 @@ def test_list_schedule_rules_filter(temp_trigger_db):
 
 
 def test_market_hours_crypto_is_open_on_weekend():
-    from backend.features.trading.market_hours import is_market_open, get_market_status_message
+    from backend.features.trading.market_hours import get_asset_class, is_market_open, get_market_status_message
 
     saturday = datetime(2026, 5, 2, 12, 0, tzinfo=timezone.utc)
 
     assert is_market_open(saturday, symbol="BTCUSD") is True
     assert "Crypto 시장 열림" in get_market_status_message(saturday, symbol="BTCUSD")
     assert is_market_open(saturday, symbol="EURUSD") is False
+    assert is_market_open(saturday, symbol="NAS100ft.r") is False
+    assert get_asset_class("BTCUSD") == "crypto"
+    assert get_asset_class("EURUSD") == "forex"
+    assert get_asset_class("NAS100ft.r") == "index"
+
+
+def test_market_hours_asset_classes_share_weekend_policy():
+    from backend.features.trading.market_hours import is_market_open
+
+    friday_open = datetime(2026, 5, 1, 21, 59, tzinfo=timezone.utc)
+    friday_closed = datetime(2026, 5, 1, 22, 0, tzinfo=timezone.utc)
+    sunday_closed = datetime(2026, 5, 3, 21, 59, tzinfo=timezone.utc)
+    sunday_open = datetime(2026, 5, 3, 22, 0, tzinfo=timezone.utc)
+
+    for symbol in ["EURUSD", "NAS100ft.r", "XAUUSD"]:
+        assert is_market_open(friday_open, symbol=symbol) is True
+        assert is_market_open(friday_closed, symbol=symbol) is False
+        assert is_market_open(sunday_closed, symbol=symbol) is False
+        assert is_market_open(sunday_open, symbol=symbol) is True
 
 
 @pytest.mark.asyncio

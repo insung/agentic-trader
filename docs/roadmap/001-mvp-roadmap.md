@@ -38,7 +38,7 @@ agentic-trader/
 ---
 
 ## 🚀 단계별 구현 계획 (Action Plan & Checklist)
-현재 "아이디어 구체화 및 설계" 단계를 마치고, MVP 구현을 위한 실행 로드맵에 따라 개발을 진행합니다. Codex, Gemini CLI, Google Antigravity 등 어떤 AI 도구를 쓰더라도 root `AGENTS.md`를 공통 SSOT로 삼고, TDD gate와 FastAPI/LangGraph/deterministic guardrail 원칙을 동일하게 적용합니다.
+현재 "아이디어 구체화 및 설계" 단계를 마치고, MVP 구현을 위한 실행 로드맵에 따라 개발을 진행합니다. Hermes Agent는 root `AGENTS.md`를 공통 SSOT로 삼고, TDD gate와 FastAPI/LangGraph/deterministic guardrail 원칙을 동일하게 적용합니다.
 
 ### Phase 0: 기반 세팅 및 뼈대 구축 (완료)
 *   [x] 프로젝트 구조 및 아키텍처 설계 (`README.md`, `docs/architecture/vision-and-philosophy.md`, `AGENTS.md` 등)
@@ -110,7 +110,7 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
 *   **운영 UX 통합 부족:** 전략 문서, config, validator, 백테스트 결과, guardrail이 여러 파일과 DB에 흩어져 있습니다. 사람이 수동으로 운영할 수 있는 화면과 API 계획은 `docs/roadmap/003-operations-ux-roadmap.md`를 기준으로 관리합니다.
 *   **전략 검증은 시작 단계:** MA/Bollinger validator는 생겼지만, 아직 전략별 파라미터 튜닝, walk-forward 검증, out-of-sample 검증, 비용/스프레드/슬리피지 반영이 부족합니다. 현재 결과는 실제 체결 환경보다 낙관적일 수 있습니다.
 *   **운영 상태 저장이 취약:** 열린 포지션과 복기 상태가 로컬 JSON 중심이라 재시작/동시 실행/중복 처리에 취약합니다. 운영 단계에서는 SQLite 이상으로 옮겨 원자적 업데이트와 중복 방지를 보장해야 합니다.
-*   **세션 간 실행 기억 구조화 부족:** `AGENTS.md`를 Codex/Gemini/Antigravity 공통 SSOT로 정리했지만, 최근 실험 결과와 운영 지표는 아직 Markdown/JSON 중심입니다. 향후 SQLite/Vector DB 기반의 검색 가능한 기억 구조가 필요합니다.
+*   **세션 간 실행 기억 구조화 부족:** `AGENTS.md`를 Hermes 중심 SSOT로 정리했지만, 최근 실험 결과와 운영 지표는 아직 Markdown/JSON 중심입니다. 향후 SQLite/Vector DB 기반의 검색 가능한 기억 구조가 필요합니다.
 *   **관측 가능성 부족:** 주문 차단 사유, LLM 판단, validator 통과/실패, MT5 응답, reconcile 결과를 구조화해서 저장하고 조회해야 합니다. 사용자-facing 대시보드/감사 화면은 `docs/roadmap/003-operations-ux-roadmap.md`로 분리합니다.
 *   **로깅 표준화 부족:** 백테스트, MT5 adapter, 스크립트, 일부 CLI 흐름에 `print`/shell `printf`/`echo` 기반 출력이 남아 있습니다. 운영 로그와 테스트 로그를 분리하고 JSONL/SQLite 관측 데이터와 연결하려면 Python 표준 `logging` 기반 로거로 단계적으로 전환해야 합니다.
 
@@ -128,7 +128,6 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
 1.  **영구 컨텍스트:** `AGENTS.md`
     *   프로젝트 철학, 아키텍처 원칙, 반드시 지켜야 할 금지 사항을 기록합니다.
     *   새로운 세션은 작업 전 반드시 `AGENTS.md`를 먼저 읽고, FastAPI/LangGraph/Guardrail 중심 구조와 TDD gate를 우선해야 합니다.
-    *   `GEMINI.md`는 Google 도구 호환용 얇은 오버레이이며, 프로젝트 원칙은 `AGENTS.md`에만 중복 없이 기록합니다.
     *   바꾸기 어려운 원칙만 기록하고, 실험 로그나 임시 결론은 넣지 않습니다.
 2.  **로드맵 및 현재 상태:** `docs/roadmap/001-mvp-roadmap.md`
     *   완료된 Phase, 아직 부족한 점, 다음 목표를 기록합니다.

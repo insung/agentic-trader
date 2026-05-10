@@ -4,7 +4,7 @@ trigger: always_on
 
 # Agentic Trader Project Rule
 
-이 문서는 `AGENTS.md`가 참조하는 구현 규칙 SSOT입니다. Codex, Gemini CLI, Google Antigravity 등 어떤 AI 도구를 쓰더라도 이 규칙을 우선합니다.
+이 문서는 `AGENTS.md`가 참조하는 구현 규칙 SSOT입니다. Hermes Agent는 이 규칙을 우선합니다.
 
 ## 1. Architecture Baseline
 

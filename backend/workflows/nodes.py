@@ -18,7 +18,7 @@ from backend.features.trading.adapters.paper_execution import execute_mock_order
 from backend.features.trading.guardrails import enforce_one_percent_rule, validate_order_prices
 from backend.features.trading.indicators import add_technical_indicators, build_indicator_snapshot
 from backend.features.trading.market_hours import is_market_open, get_market_status_message
-from backend.features.trading.strategy_validators import validate_strategy_setup
+from backend.features.trading.strategy_validators import build_volatility_expansion_breakout_metadata, validate_strategy_setup
 from backend.features.trading.persistence.backtest_store import DEFAULT_BACKTEST_DB_PATH, upsert_candles
 from backend.features.trading.persistence.trading_log_store import DEFAULT_TRADING_LOG_DB_PATH, store_trade_review
 
@@ -209,13 +209,15 @@ def execute_order_node(state: AgentState) -> Dict[str, Any]:
         return {"order_result": {"success": False, "error_message": "No final_order", "timestamp": datetime.now().isoformat()}}
         
     if isinstance(final_order, dict):
-        action = final_order.get("action", "HOLD")
-        sl = final_order.get("sl_price", final_order.get("sl", 0.0))
-        tp = final_order.get("tp_price", final_order.get("tp", 0.0))
+        final_order_payload = dict(final_order)
+        action = final_order_payload.get("action", "HOLD")
+        sl = final_order_payload.get("sl_price", final_order_payload.get("sl", 0.0))
+        tp = final_order_payload.get("tp_price", final_order_payload.get("tp", 0.0))
     else:
         action = final_order.action.value if hasattr(final_order.action, 'value') else final_order.action
         sl = final_order.sl_price
         tp = final_order.tp_price
+        final_order_payload = final_order.model_dump() if hasattr(final_order, "model_dump") else dict(final_order)
     if action.upper() not in ["BUY", "SELL"]:
         return {"order_result": {"success": False, "error_message": f"Action was {action}", "timestamp": datetime.now().isoformat()}}
         
@@ -230,6 +232,18 @@ def execute_order_node(state: AgentState) -> Dict[str, Any]:
     if entry_price <= 0:
         return {"order_result": {"success": False, "error_message": "Could not get current price", "timestamp": datetime.now().isoformat()}}
 
+    strategy_hypothesis = getattr(state, "strategy_hypothesis", {}) or {}
+    selected_strategy = str(strategy_hypothesis.get("selected_strategy", ""))
+    if "volatility expansion breakout" in selected_strategy.lower():
+        strategy_metadata = build_volatility_expansion_breakout_metadata(
+            action,
+            getattr(state, "indicator_data", {}),
+            primary_timeframe="M5",
+            confirmation_timeframes=["M15"],
+        )
+        if strategy_metadata:
+            final_order_payload["strategy_metadata"] = strategy_metadata
+    
     # 1. Strategy Specific Validator & Override
     setup_ok, setup_reason, overridden_sl, overridden_tp = validate_strategy_setup(
         action,
@@ -245,6 +259,12 @@ def execute_order_node(state: AgentState) -> Dict[str, Any]:
         sl = overridden_sl
     if overridden_tp is not None:
         tp = overridden_tp
+
+    final_order_payload["action"] = action
+    final_order_payload["sl_price"] = sl
+    final_order_payload["tp_price"] = tp
+    final_order_payload["entry_price"] = entry_price
+    final_order_payload["symbol"] = symbol
 
     # 2. Price Direction & R/R Guardrail
     if not validate_order_prices(action, entry_price, sl, tp):
@@ -262,7 +282,7 @@ def execute_order_node(state: AgentState) -> Dict[str, Any]:
         "executed_price": result.get("price"),
         "timestamp": datetime.now().isoformat()
     }
-    return {"order_result": order_result_dict}
+    return {"order_result": order_result_dict, "final_order": final_order_payload}
 
 def risk_reviewer_node(state: AgentState) -> Dict[str, Any]:
     """Node 5: Risk Reviewer reviews a closed trade and logs the result."""

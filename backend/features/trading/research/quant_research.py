@@ -7,9 +7,9 @@ portfolio results for parameter sweeps.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -19,8 +19,8 @@ import pandas as pd
 class QuantResearchConfig:
     symbol: str
     timeframe: str
-    from_date: str
-    to_date: str
+    from_date: Optional[str]
+    to_date: Optional[str]
     strategy: str = "bollinger"
     init_cash: float = 10000.0
     fees: float = 0.0
@@ -46,6 +46,13 @@ class QuantResearchConfig:
     breakout_atr_buffers: List[float] | None = None
     breakout_rsi_lowers: List[float] | None = None
     breakout_rsi_uppers: List[float] | None = None
+    veb_lookbacks: List[int] | None = None
+    veb_atr_expansions: List[float] | None = None
+    veb_adx_mins: List[float] | None = None
+    veb_sl_atr_buffers: List[float] | None = None
+    veb_bandwidth_windows: List[int] | None = None
+    veb_bandwidth_quantiles: List[float] | None = None
+    veb_bandwidth_expansion_ratios: List[float] | None = None
     ma_adx_mins: List[float] | None = None
     ma_max_cross_age_bars: List[int] | None = None
     macd_fast_windows: List[int] | None = None
@@ -1164,10 +1171,457 @@ def _prepare_filter_frame(filter_candles: pd.DataFrame, base_times: pd.Series) -
     prepared["filter_ema50"] = prepared["filter_close"].ewm(span=50, adjust=False).mean()
     prepared["filter_rsi14"] = _rsi(prepared["filter_close"], 14)
     prepared["filter_adx14"] = _adx(prepared[["high", "low", "close"]], 14)
-    prepared = prepared[["time", "filter_close", "filter_ema20", "filter_ema50", "filter_rsi14", "filter_adx14"]]
+    prepared["filter_adx_slope_positive"] = prepared["filter_adx14"] > prepared["filter_adx14"].shift(1)
+    prepared = prepared[
+        [
+            "time",
+            "filter_close",
+            "filter_ema20",
+            "filter_ema50",
+            "filter_rsi14",
+            "filter_adx14",
+            "filter_adx_slope_positive",
+        ]
+    ]
 
     base = pd.DataFrame({"time": pd.to_datetime(base_times)})
     return pd.merge_asof(base.sort_values("time"), prepared, on="time", direction="backward")
+
+
+def _resolve_veb_parameters(
+    config: QuantResearchConfig,
+    fixed_parameters: Dict[str, Any] | None = None,
+) -> List[Dict[str, float]]:
+    if fixed_parameters:
+        rr = float(fixed_parameters.get("rr", 2.0))
+        return [
+            {
+                "lookback": float(fixed_parameters.get("lookback", 30)),
+                "atr_expansion": float(fixed_parameters.get("atr_expansion", 1.5)),
+                "adx_min": float(fixed_parameters.get("adx_min", 20.0)),
+                "sl_atr_buffer": float(fixed_parameters.get("sl_atr_buffer", 0.5)),
+                "bandwidth_window": float(fixed_parameters.get("bandwidth_window", 0)),
+                "bandwidth_quantile": float(fixed_parameters.get("bandwidth_quantile", 0.0)),
+                "bandwidth_expansion_ratio": float(fixed_parameters.get("bandwidth_expansion_ratio", 0.0)),
+                "rr": max(float(rr), 2.0),
+            }
+        ]
+
+    lookbacks = config.veb_lookbacks or [30, 45, 60]
+    atr_expansions = config.veb_atr_expansions or [1.5, 2.0]
+    adx_mins = config.veb_adx_mins or [20.0, 25.0]
+    sl_atr_buffers = config.veb_sl_atr_buffers or [0.5]
+    bandwidth_windows = config.veb_bandwidth_windows or [0]
+    bandwidth_quantiles = config.veb_bandwidth_quantiles or [0.0]
+    bandwidth_expansion_ratios = config.veb_bandwidth_expansion_ratios or [0.0]
+    rrs = [float(rr) for rr in (config.rrs or [2.0]) if float(rr) >= 2.0] or [2.0]
+
+    return [
+        {
+            "lookback": float(lookback),
+            "atr_expansion": float(atr_expansion),
+            "adx_min": float(adx_min),
+            "sl_atr_buffer": float(sl_atr_buffer),
+            "bandwidth_window": float(bandwidth_window),
+            "bandwidth_quantile": float(bandwidth_quantile),
+            "bandwidth_expansion_ratio": float(bandwidth_expansion_ratio),
+            "rr": float(rr),
+        }
+        for lookback in lookbacks
+        for atr_expansion in atr_expansions
+        for adx_min in adx_mins
+        for sl_atr_buffer in sl_atr_buffers
+        for bandwidth_window in bandwidth_windows
+        for bandwidth_quantile in bandwidth_quantiles
+        for bandwidth_expansion_ratio in bandwidth_expansion_ratios
+        for rr in rrs
+    ]
+
+
+def _veb_find_long_pattern(df: pd.DataFrame, current_idx: int, lookback: int) -> Dict[str, float] | None:
+    start_idx = max(0, current_idx - lookback + 1)
+    window = df.iloc[start_idx : current_idx + 1]
+    if len(window) < lookback:
+        return None
+
+    bottom1_local_idx = None
+    for local_idx in range(max(0, len(window) - 5)):
+        row = window.iloc[local_idx]
+        low = row.get("low")
+        lower = row.get("bb_lower20")
+        if low is None or lower is None or pd.isna(low) or pd.isna(lower):
+            continue
+        if low <= lower:
+            bottom1_local_idx = local_idx
+            break
+
+    if bottom1_local_idx is None:
+        return None
+
+    bottom2_local_idx = None
+    for local_idx in range(len(window) - 2, bottom1_local_idx, -1):
+        row = window.iloc[local_idx]
+        prev_row = window.iloc[local_idx - 1]
+        next_row = window.iloc[local_idx + 1]
+        low = row.get("low")
+        lower = row.get("bb_lower20")
+        if any(
+            value is None or pd.isna(value)
+            for value in (low, lower, prev_row.get("low"), next_row.get("low"))
+        ):
+            continue
+        if low > lower and low < prev_row["low"] and low < next_row["low"]:
+            bottom2_local_idx = local_idx
+            break
+
+    if bottom2_local_idx is None:
+        return None
+
+    bottom1_low = window.iloc[bottom1_local_idx]["low"]
+    bottom2_low = window.iloc[bottom2_local_idx]["low"]
+    if bottom2_low <= bottom1_low:
+        return None
+
+    neckline_slice = window.iloc[bottom1_local_idx:bottom2_local_idx]
+    if neckline_slice.empty:
+        return None
+    if neckline_slice[["high", "low"]].isna().any().any():
+        return None
+
+    return {
+        "bottom1_idx": float(start_idx + bottom1_local_idx),
+        "bottom2_idx": float(start_idx + bottom2_local_idx),
+        "bottom2_low": float(bottom2_low),
+        "neckline": float(neckline_slice["high"].max()),
+    }
+
+
+def _veb_find_short_pattern(df: pd.DataFrame, current_idx: int, lookback: int) -> Dict[str, float] | None:
+    start_idx = max(0, current_idx - lookback + 1)
+    window = df.iloc[start_idx : current_idx + 1]
+    if len(window) < lookback:
+        return None
+
+    top1_local_idx = None
+    for local_idx in range(max(0, len(window) - 5)):
+        row = window.iloc[local_idx]
+        high = row.get("high")
+        upper = row.get("bb_upper20")
+        if high is None or upper is None or pd.isna(high) or pd.isna(upper):
+            continue
+        if high >= upper:
+            top1_local_idx = local_idx
+            break
+
+    if top1_local_idx is None:
+        return None
+
+    top2_local_idx = None
+    for local_idx in range(len(window) - 2, top1_local_idx, -1):
+        row = window.iloc[local_idx]
+        prev_row = window.iloc[local_idx - 1]
+        next_row = window.iloc[local_idx + 1]
+        high = row.get("high")
+        upper = row.get("bb_upper20")
+        if any(
+            value is None or pd.isna(value)
+            for value in (high, upper, prev_row.get("high"), next_row.get("high"))
+        ):
+            continue
+        if high < upper and high > prev_row["high"] and high > next_row["high"]:
+            top2_local_idx = local_idx
+            break
+
+    if top2_local_idx is None:
+        return None
+
+    top1_high = window.iloc[top1_local_idx]["high"]
+    top2_high = window.iloc[top2_local_idx]["high"]
+    if top2_high >= top1_high:
+        return None
+
+    neckline_slice = window.iloc[top1_local_idx:top2_local_idx]
+    if neckline_slice.empty:
+        return None
+    if neckline_slice[["high", "low"]].isna().any().any():
+        return None
+
+    return {
+        "top1_idx": float(start_idx + top1_local_idx),
+        "top2_idx": float(start_idx + top2_local_idx),
+        "top2_high": float(top2_high),
+        "neckline": float(neckline_slice["low"].min()),
+    }
+
+
+def _build_veb_signals(
+    df: pd.DataFrame,
+    filter_frame: pd.DataFrame,
+    *,
+    lookback: int,
+    atr_expansion: float,
+    adx_min: float,
+    sl_atr_buffer: float,
+    rr: float,
+) -> Dict[str, pd.Series]:
+    index = df.index
+    long_entries = pd.Series(False, index=index, dtype=bool)
+    short_entries = pd.Series(False, index=index, dtype=bool)
+    exits = pd.Series(False, index=index, dtype=bool)
+    short_exits = pd.Series(False, index=index, dtype=bool)
+    long_sl_stop = pd.Series(np.nan, index=index, dtype=float)
+    long_tp_stop = pd.Series(np.nan, index=index, dtype=float)
+    short_sl_stop = pd.Series(np.nan, index=index, dtype=float)
+    short_tp_stop = pd.Series(np.nan, index=index, dtype=float)
+
+    if not df.empty:
+        exits.iloc[-1] = True
+        short_exits.iloc[-1] = True
+
+    required_fields = ("high", "low", "close", "atr14")
+
+    for current_idx in range(max(lookback - 1, 0), len(df)):
+        latest = df.iloc[current_idx]
+        filt = filter_frame.iloc[current_idx] if current_idx < len(filter_frame) else None
+        if filt is None:
+            continue
+        if any(latest.get(field) is None or pd.isna(latest.get(field)) for field in required_fields):
+            continue
+        if latest["high"] - latest["low"] < latest["atr14"] * atr_expansion:
+            continue
+        if pd.isna(filt.get("filter_adx14")) or float(filt["filter_adx14"]) <= adx_min:
+            continue
+        if pd.isna(filt.get("filter_adx_slope_positive")) or not bool(filt.get("filter_adx_slope_positive")):
+            continue
+
+        prev_close = df.iloc[current_idx - 1]["close"] if current_idx > 0 else None
+
+        if pd.notna(filt.get("filter_ema20")) and pd.notna(filt.get("filter_ema50")):
+            if float(filt["filter_ema20"]) >= float(filt["filter_ema50"]):
+                long_pattern = _veb_find_long_pattern(df, current_idx, lookback)
+                if long_pattern is not None and prev_close is not None and pd.notna(prev_close):
+                    if prev_close <= long_pattern["neckline"] and latest["close"] > long_pattern["neckline"]:
+                        sl_price = long_pattern["bottom2_low"] - (latest["atr14"] * sl_atr_buffer)
+                        if sl_price < latest["close"]:
+                            risk_distance = latest["close"] - sl_price
+                            stop_fraction = risk_distance / latest["close"]
+                            long_entries.iloc[current_idx] = True
+                            long_sl_stop.iloc[current_idx] = stop_fraction
+                            long_tp_stop.iloc[current_idx] = stop_fraction * rr
+
+            if float(filt["filter_ema20"]) <= float(filt["filter_ema50"]):
+                short_pattern = _veb_find_short_pattern(df, current_idx, lookback)
+                if short_pattern is not None and prev_close is not None and pd.notna(prev_close):
+                    if prev_close >= short_pattern["neckline"] and latest["close"] < short_pattern["neckline"]:
+                        sl_price = short_pattern["top2_high"] + (latest["atr14"] * sl_atr_buffer)
+                        if sl_price > latest["close"]:
+                            risk_distance = sl_price - latest["close"]
+                            stop_fraction = risk_distance / latest["close"]
+                            short_entries.iloc[current_idx] = True
+                            short_sl_stop.iloc[current_idx] = stop_fraction
+                            short_tp_stop.iloc[current_idx] = stop_fraction * rr
+
+    return {
+        "entries": long_entries,
+        "exits": exits,
+        "short_entries": short_entries,
+        "short_exits": short_exits,
+        "long_sl_stop": long_sl_stop,
+        "long_tp_stop": long_tp_stop,
+        "short_sl_stop": short_sl_stop,
+        "short_tp_stop": short_tp_stop,
+    }
+
+
+def _apply_veb_bandwidth_filter(
+    signals: Dict[str, pd.Series],
+    close: pd.Series,
+    upper_band: pd.Series,
+    lower_band: pd.Series,
+    *,
+    bandwidth_window: int,
+    bandwidth_quantile: float,
+    bandwidth_expansion_ratio: float,
+) -> None:
+    """Keep VEB entries only when Bollinger bandwidth is in expansion."""
+    if bandwidth_window <= 0 or bandwidth_quantile <= 0 or bandwidth_expansion_ratio <= 0:
+        return
+
+    bandwidth = ((upper_band - lower_band) / close).replace([np.inf, -np.inf], np.nan)
+    threshold = bandwidth.rolling(bandwidth_window).quantile(bandwidth_quantile)
+    expansion_ok = (bandwidth >= threshold * bandwidth_expansion_ratio).fillna(False)
+    signals["entries"] = signals["entries"] & expansion_ok
+    signals["short_entries"] = signals["short_entries"] & expansion_ok
+
+
+def _run_volatility_expansion_breakout_research(
+    candles: pd.DataFrame,
+    filter_candles: pd.DataFrame,
+    config: QuantResearchConfig,
+    *,
+    fixed_parameters: Dict[str, Any] | None = None,
+    walk_forward_phase: str | None = None,
+) -> QuantResearchResult:
+    if candles.empty:
+        raise ValueError("No candle data available for volatility expansion breakout quant research")
+    if filter_candles is None or filter_candles.empty:
+        raise ValueError("No filter timeframe candles available for volatility expansion breakout quant research")
+    if not config.filter_timeframe:
+        raise ValueError("filter_timeframe is required for volatility_expansion_breakout")
+
+    required = {"time", "open", "high", "low", "close"}
+    missing = sorted(required - set(candles.columns))
+    if missing:
+        raise ValueError(f"Missing required candle columns: {', '.join(missing)}")
+
+    vbt = _load_vectorbt()
+    df = candles.sort_values("time").reset_index(drop=True).copy()
+    df["time"] = pd.to_datetime(df["time"])
+    close = df["close"].astype(float)
+    df["ema50"] = close.ewm(span=50, adjust=False).mean()
+    df["atr14"] = _atr(df, 14)
+    df["adx14"] = _adx(df, 14)
+    _, upper, lower = _bollinger_parts(close, 20, 2.0)
+    df["bb_upper20"] = upper
+    df["bb_lower20"] = lower
+
+    prepared_filter = _prepare_filter_frame(filter_candles, df["time"])
+    parameter_grid = _resolve_veb_parameters(config, fixed_parameters=fixed_parameters)
+    freq = _timeframe_to_freq(config.timeframe)
+
+    results: List[Dict[str, Any]] = []
+    for params in parameter_grid:
+        signals = _build_veb_signals(
+            df,
+            prepared_filter,
+            lookback=int(params["lookback"]),
+            atr_expansion=float(params["atr_expansion"]),
+            adx_min=float(params["adx_min"]),
+            sl_atr_buffer=float(params["sl_atr_buffer"]),
+            rr=float(params["rr"]),
+        )
+        _apply_veb_bandwidth_filter(
+            signals,
+            close,
+            upper,
+            lower,
+            bandwidth_window=int(params["bandwidth_window"]),
+            bandwidth_quantile=float(params["bandwidth_quantile"]),
+            bandwidth_expansion_ratio=float(params["bandwidth_expansion_ratio"]),
+        )
+
+        portfolio = vbt.Portfolio.from_signals(
+            close,
+            entries=signals["entries"].astype(bool),
+            exits=signals["exits"].astype(bool),
+            short_entries=signals["short_entries"].astype(bool),
+            short_exits=signals["short_exits"].astype(bool),
+            init_cash=config.init_cash,
+            fees=config.fees,
+            slippage=config.slippage,
+            sl_stop=signals["long_sl_stop"].combine_first(signals["short_sl_stop"]),
+            tp_stop=signals["long_tp_stop"].combine_first(signals["short_tp_stop"]),
+            freq=freq,
+        )
+        stats = portfolio.stats()
+        parameter_json = {
+            "strategy_variant": "w_m_volatility_expansion",
+            "lookback": int(params["lookback"]),
+            "atr_expansion": float(params["atr_expansion"]),
+            "adx_min": float(params["adx_min"]),
+            "sl_atr_buffer": float(params["sl_atr_buffer"]),
+            "bandwidth_window": int(params["bandwidth_window"]),
+            "bandwidth_quantile": float(params["bandwidth_quantile"]),
+            "bandwidth_expansion_ratio": float(params["bandwidth_expansion_ratio"]),
+            "rr": float(params["rr"]),
+            "filter_timeframe": config.filter_timeframe.upper(),
+        }
+        if walk_forward_phase:
+            parameter_json["walk_forward_phase"] = walk_forward_phase
+        results.append(
+            {
+                "parameter_json": parameter_json,
+                "total_return_pct": _float_metric(stats, "Total Return [%]"),
+                "total_trades": _int_metric(stats, "Total Trades"),
+                "win_rate": _float_metric(stats, "Win Rate [%]"),
+                "profit_factor": _float_metric(stats, "Profit Factor"),
+                "max_drawdown_pct": _float_metric(stats, "Max Drawdown [%]"),
+                "sharpe": _float_metric(stats, "Sharpe Ratio"),
+                "expectancy": _float_metric(stats, "Expectancy"),
+                "min_trades_for_rank": config.min_trades_for_rank,
+            }
+        )
+
+    ranked = sorted(results, key=_rank_key, reverse=True)
+    for index, item in enumerate(ranked, start=1):
+        item.pop("min_trades_for_rank", None)
+        item["rank"] = index
+
+    return QuantResearchResult(
+        run={
+            "run_id": _now_run_id(config.symbol),
+            "strategy": config.strategy,
+            "symbol": config.symbol,
+            "timeframe": config.timeframe.upper(),
+            "filter_timeframe": config.filter_timeframe.upper(),
+            "data_from": config.from_date,
+            "data_to": config.to_date,
+            "init_cash": config.init_cash,
+            "fees": config.fees,
+            "slippage": config.slippage,
+        },
+        results=ranked,
+    )
+
+
+def run_volatility_expansion_breakout_research(
+    candles: pd.DataFrame,
+    filter_candles: pd.DataFrame,
+    config: QuantResearchConfig,
+) -> QuantResearchResult:
+    """Run the VEB parameter sweep with vectorbt portfolios."""
+    return _run_volatility_expansion_breakout_research(candles, filter_candles, config)
+
+
+def run_volatility_expansion_breakout_walk_forward(
+    is_candles: pd.DataFrame,
+    is_filter_candles: pd.DataFrame,
+    oos_candles: pd.DataFrame,
+    oos_filter_candles: pd.DataFrame,
+    config: QuantResearchConfig,
+    *,
+    is_from: str,
+    is_to: str,
+    oos_from: str,
+    oos_to: str,
+) -> Dict[str, Any]:
+    """Run an IS sweep, select rank-1 parameters, and replay them on OOS data."""
+    is_config = replace(config, from_date=is_from, to_date=is_to, strategy="volatility_expansion_breakout")
+    oos_config = replace(config, from_date=oos_from, to_date=oos_to, strategy="volatility_expansion_breakout")
+
+    is_result = _run_volatility_expansion_breakout_research(
+        is_candles,
+        is_filter_candles,
+        is_config,
+        walk_forward_phase="IS",
+    )
+    if not is_result.results:
+        raise ValueError("No IS results produced for volatility expansion breakout walk-forward")
+
+    selected_parameters = dict(is_result.results[0]["parameter_json"])
+    selected_parameters.pop("walk_forward_phase", None)
+    oos_result = _run_volatility_expansion_breakout_research(
+        oos_candles,
+        oos_filter_candles,
+        oos_config,
+        fixed_parameters=selected_parameters,
+        walk_forward_phase="OOS",
+    )
+    return {
+        "is_result": is_result,
+        "oos_result": oos_result,
+        "selected_parameters": selected_parameters,
+    }
 
 
 def run_bollinger_mtf_research(

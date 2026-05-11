@@ -25,6 +25,16 @@ class StrategyGateConfig:
     rsi_pullback_sell: float = 50.0
     rsi_lookback_candles: int = 3
     min_body_ratio: float = 0.3
+    # Volatility Expansion Breakout (VEB) params
+    veb_min_adx: float = 20.0
+    veb_lookback_min: int = 30
+    veb_lookback_max: int = 60
+    veb_m5_atr_expansion: float = 1.5
+    veb_sl_atr_buffer: float = 0.5
+    veb_min_rr: float = 2.0
+    veb_bandwidth_lookback: int = 30
+    veb_bandwidth_quantile: float = 0.6
+    veb_bandwidth_expansion_ratio: float = 1.1
 
 
 ValidatorReturnType = Tuple[bool, str, Optional[float], Optional[float]]
@@ -298,11 +308,319 @@ def _validate_rsi_trend_pullback(action: str, entry_price: float, sl_price: floa
     return False, "RSI Trend Pullback only validates BUY or SELL", None, None
 
 
+def _resolve_confirmation_snapshot(indicator_data: Dict[str, Any], confirmation_timeframes: List[str] | None = None) -> Dict[str, Any] | None:
+    if confirmation_timeframes:
+        for tf in confirmation_timeframes:
+            snapshot = indicator_data.get(tf)
+            if snapshot:
+                return snapshot
+        return None
+    return indicator_data.get("M15")
+
+
+def build_volatility_expansion_breakout_metadata(
+    action: str,
+    indicator_data: Dict[str, Any],
+    primary_timeframe: str | None = None,
+    confirmation_timeframes: List[str] | None = None,
+    config: StrategyGateConfig | None = None,
+) -> Dict[str, Any]:
+    config = config or StrategyGateConfig()
+    action = action.upper()
+    snapshot = _base_snapshot(indicator_data, primary_timeframe)
+    if not snapshot:
+        return {}
+
+    rows = snapshot.get("recent_rows", [])
+    if len(rows) < config.veb_lookback_min:
+        return {}
+    rows = rows[-config.veb_lookback_max:]
+    latest_m5 = rows[-1]
+
+    m5_atr = latest_m5.get("atr14")
+    if m5_atr is None or m5_atr <= 0:
+        return {}
+    if any(latest_m5.get(field) is None for field in ("high", "low", "close")):
+        return {}
+
+    candle_range = latest_m5["high"] - latest_m5["low"]
+    if candle_range < m5_atr * config.veb_m5_atr_expansion:
+        return {}
+
+    bandwidth_ok, _ = _veb_bandwidth_expansion_ok(rows, config)
+    if not bandwidth_ok:
+        return {}
+
+    m15_snapshot = _resolve_confirmation_snapshot(indicator_data, confirmation_timeframes)
+    if not m15_snapshot:
+        return {}
+
+    m15_latest = m15_snapshot.get("latest", {})
+    m15_adx = m15_latest.get("adx14")
+    if m15_adx is None or m15_adx <= config.veb_min_adx:
+        return {}
+
+    m15_rows = m15_snapshot.get("recent_rows", [])
+    if len(m15_rows) >= 2:
+        prev_adx = m15_rows[-2].get("adx14")
+        if prev_adx is not None and m15_adx <= prev_adx:
+            return {}
+
+    metadata: Dict[str, Any] = {
+        "strategy": "Volatility Expansion Breakout",
+        "direction": action,
+        "primary_timeframe": (primary_timeframe or "M5").upper(),
+        "confirmation_timeframes": [tf.upper() for tf in (confirmation_timeframes or ["M15"])],
+        "invalidation_rule": "two_consecutive_neckline_breaks",
+    }
+
+    if action == "BUY":
+        bottom1_idx = -1
+        for i in range(len(rows) - 5):
+            if rows[i].get("low") is not None and rows[i].get("bb_lower20") is not None and rows[i]["low"] <= rows[i]["bb_lower20"]:
+                bottom1_idx = i
+                break
+        if bottom1_idx == -1:
+            return {}
+        bottom2_idx = -1
+        for i in range(len(rows) - 2, bottom1_idx + 1, -1):
+            if rows[i].get("low") is not None and rows[i].get("bb_lower20") is not None and rows[i]["low"] > rows[i]["bb_lower20"]:
+                if rows[i]["low"] < rows[i - 1]["low"] and rows[i]["low"] < rows[i + 1]["low"]:
+                    bottom2_idx = i
+                    break
+        if bottom2_idx == -1:
+            return {}
+        if rows[bottom2_idx]["low"] <= rows[bottom1_idx]["low"]:
+            return {}
+        neckline_slice = rows[bottom1_idx:bottom2_idx]
+        if not neckline_slice:
+            return {}
+        metadata["neckline"] = max(r["high"] for r in neckline_slice)
+        metadata["pattern"] = "W-Bottom"
+        return metadata
+
+    if action == "SELL":
+        top1_idx = -1
+        for i in range(len(rows) - 5):
+            if rows[i].get("high") is not None and rows[i].get("bb_upper20") is not None and rows[i]["high"] >= rows[i]["bb_upper20"]:
+                top1_idx = i
+                break
+        if top1_idx == -1:
+            return {}
+        top2_idx = -1
+        for i in range(len(rows) - 2, top1_idx + 1, -1):
+            if rows[i].get("high") is not None and rows[i].get("bb_upper20") is not None and rows[i]["high"] < rows[i]["bb_upper20"]:
+                if rows[i]["high"] > rows[i - 1]["high"] and rows[i]["high"] > rows[i + 1]["high"]:
+                    top2_idx = i
+                    break
+        if top2_idx == -1:
+            return {}
+        if rows[top2_idx]["high"] >= rows[top1_idx]["high"]:
+            return {}
+        neckline_slice = rows[top1_idx:top2_idx]
+        if not neckline_slice:
+            return {}
+        metadata["neckline"] = min(r["low"] for r in neckline_slice)
+        metadata["pattern"] = "M-Top"
+        return metadata
+
+    return {}
+
+
+def _veb_bandwidth_expansion_ok(rows: List[Dict[str, Any]], config: StrategyGateConfig) -> Tuple[bool, str]:
+    lookback = min(config.veb_bandwidth_lookback, len(rows))
+    if lookback <= 1:
+        return False, "VEB bandwidth expansion requires recent Bollinger bandwidth history"
+    widths: List[float] = []
+    for row in rows[-lookback:]:
+        close = row.get("close")
+        upper = row.get("bb_upper20")
+        lower = row.get("bb_lower20")
+        if close is None or upper is None or lower is None or close <= 0:
+            return False, "VEB bandwidth expansion requires close and Bollinger bands"
+        widths.append((upper - lower) / close)
+    current_width = widths[-1]
+    sorted_widths = sorted(widths)
+    quantile_index = min(
+        len(sorted_widths) - 1,
+        max(0, int(round((len(sorted_widths) - 1) * config.veb_bandwidth_quantile))),
+    )
+    threshold = sorted_widths[quantile_index] * config.veb_bandwidth_expansion_ratio
+    if current_width < threshold:
+        return False, (
+            f"VEB bandwidth expansion failed: current {current_width:.5f} "
+            f"< required {threshold:.5f}"
+        )
+    return True, "VEB bandwidth expansion confirmed"
+
+
+def _validate_volatility_expansion_breakout(
+    action: str,
+    entry_price: float,
+    sl_price: float,
+    snapshot: Dict[str, Any],
+    indicator_data: Dict[str, Any],
+    config: StrategyGateConfig,
+    confirmation_timeframes: List[str] | None = None
+) -> ValidatorReturnType:
+    rows = snapshot.get("recent_rows", [])
+    if len(rows) < config.veb_lookback_min:
+        return False, f"Volatility Expansion Breakout requires at least {config.veb_lookback_min} recent M5 rows", None, None
+
+    # Use only the last veb_lookback_max rows
+    rows = rows[-config.veb_lookback_max:]
+    latest_m5 = rows[-1]
+
+    missing_current_fields = [field for field in ("high", "low", "close", "atr14") if latest_m5.get(field) is None]
+    if missing_current_fields:
+        return False, f"VEB requires current M5 fields: {', '.join(missing_current_fields)}", None, None
+
+    for idx, row in enumerate(rows):
+        if row.get("high") is None or row.get("low") is None:
+            return False, f"VEB requires high and low on every M5 row used for pattern detection (row {idx})", None, None
+
+    latest_m5 = rows[-1]
+    m5_atr = latest_m5.get("atr14")
+    if m5_atr is None or m5_atr <= 0:
+        return False, "M5 ATR14 is required and must be positive", None, None
+
+    # Momentum filter: current candle range >= config.veb_m5_atr_expansion * ATR
+    candle_range = latest_m5["high"] - latest_m5["low"]
+    required_range = m5_atr * config.veb_m5_atr_expansion
+    if candle_range < required_range:
+        return False, f"Momentum check failed: range {candle_range:.5f} < {required_range:.5f} (ATR expansion)", None, None
+
+    bandwidth_ok, bandwidth_reason = _veb_bandwidth_expansion_ok(rows, config)
+    if not bandwidth_ok:
+        return False, bandwidth_reason, None, None
+
+    # Higher timeframe confirmation (M15)
+    m15_snapshot = _resolve_confirmation_snapshot(indicator_data, confirmation_timeframes)
+    if not m15_snapshot:
+        return False, "Volatility Expansion Breakout requires M15 (or other HTF) confirmation", None, None
+
+    m15_latest = m15_snapshot.get("latest", {})
+    m15_adx = m15_latest.get("adx14")
+    if m15_adx is None or m15_adx <= config.veb_min_adx:
+        return False, f"M15 ADX {m15_adx} is not above {config.veb_min_adx}", None, None
+
+    # ADX Slope check
+    m15_rows = m15_snapshot.get("recent_rows", [])
+    if len(m15_rows) >= 2:
+        prev_adx = m15_rows[-2].get("adx14")
+        if prev_adx is not None and m15_adx <= prev_adx:
+            return False, f"M15 ADX slope is not positive (current {m15_adx:.2f} <= prev {prev_adx:.2f})", None, None
+
+    overridden_sl: float | None = None
+    overridden_tp: float | None = None
+
+    if action == "BUY":
+        # W-Bottom pattern detection
+        # Bottom 1: low <= bb_lower20
+        bottom1_idx = -1
+        for i in range(len(rows) - 5): # Leave room for Neckline and Bottom 2
+            if rows[i].get("low") is not None and rows[i].get("bb_lower20") is not None and rows[i]["low"] <= rows[i]["bb_lower20"]:
+                bottom1_idx = i
+                break
+        
+        if bottom1_idx == -1:
+            return False, "Could not identify Bottom 1 (low <= BB lower) in lookback", None, None
+
+        # Bottom 2: higher low, low > bb_lower20, after Bottom 1
+        bottom2_idx = -1
+        # Search from the end backwards, but must be after bottom1
+        for i in range(len(rows) - 2, bottom1_idx + 1, -1):
+            if rows[i].get("low") is not None and rows[i].get("bb_lower20") is not None and rows[i]["low"] > rows[i]["bb_lower20"]:
+                # Check if it's a local low
+                if rows[i]["low"] < rows[i-1]["low"] and rows[i]["low"] < rows[i+1]["low"]:
+                    bottom2_idx = i
+                    break
+        
+        if bottom2_idx == -1:
+             return False, "Could not identify Bottom 2 (higher low > BB lower) after Bottom 1", None, None
+        
+        bottom1_low = rows[bottom1_idx]["low"]
+        bottom2_low = rows[bottom2_idx]["low"]
+        if bottom2_low <= bottom1_low:
+             return False, f"W-Bottom requires higher low (Bottom2 {bottom2_low} <= Bottom1 {bottom1_low})", None, None
+
+        # Neckline is the high slice between Bottom 1 and Bottom 2
+        neckline_slice = rows[bottom1_idx:bottom2_idx]
+        if not neckline_slice:
+            return False, "Invalid pattern slice for neckline calculation", None, None
+        neckline = max(r["high"] for r in neckline_slice)
+        
+        if latest_m5["close"] <= neckline:
+            return False, f"Price {latest_m5['close']} has not broken above neckline {neckline}", None, None
+
+        # EMA Alignment on M15
+        ema20 = m15_latest.get("ema20")
+        ema50 = m15_latest.get("ema50")
+        if ema20 is not None and ema50 is not None and ema20 < ema50:
+            return False, "M15 EMA20 is below EMA50, rejecting BUY during potential bearish HTF trend", None, None
+
+        overridden_sl = round(bottom2_low - (m5_atr * config.veb_sl_atr_buffer), 5)
+        overridden_tp = round(entry_price + abs(entry_price - overridden_sl) * config.veb_min_rr, 5)
+        return True, "Volatility Expansion Breakout BUY confirmed", overridden_sl, overridden_tp
+
+    elif action == "SELL":
+        # M-Top pattern detection
+        # Top 1: high >= bb_upper20
+        top1_idx = -1
+        for i in range(len(rows) - 5):
+            if rows[i].get("high") is not None and rows[i].get("bb_upper20") is not None and rows[i]["high"] >= rows[i]["bb_upper20"]:
+                top1_idx = i
+                break
+        
+        if top1_idx == -1:
+            return False, "Could not identify Top 1 (high >= BB upper) in lookback", None, None
+
+        # Top 2: lower high, high < bb_upper20, after Top 1
+        top2_idx = -1
+        for i in range(len(rows) - 2, top1_idx + 1, -1):
+            if rows[i].get("high") is not None and rows[i].get("bb_upper20") is not None and rows[i]["high"] < rows[i]["bb_upper20"]:
+                if rows[i]["high"] > rows[i-1]["high"] and rows[i]["high"] > rows[i+1]["high"]:
+                    top2_idx = i
+                    break
+        
+        if top2_idx == -1:
+            return False, "Could not identify Top 2 (lower high < BB upper) after Top 1", None, None
+        
+        top1_high = rows[top1_idx]["high"]
+        top2_high = rows[top2_idx]["high"]
+        if top2_high >= top1_high:
+            return False, f"M-Top requires lower high (Top2 {top2_high} >= Top1 {top1_high})", None, None
+
+        neckline_slice = rows[top1_idx:top2_idx]
+        if not neckline_slice:
+            return False, "Invalid pattern slice for neckline calculation", None, None
+        neckline = min(r["low"] for r in neckline_slice)
+        
+        if latest_m5["close"] >= neckline:
+            return False, f"Price {latest_m5['close']} has not broken below neckline {neckline}", None, None
+
+        # EMA Alignment on M15
+        ema20 = m15_latest.get("ema20")
+        ema50 = m15_latest.get("ema50")
+        if ema20 is not None and ema50 is not None and ema20 > ema50:
+            return False, "M15 EMA20 is above EMA50, rejecting SELL during potential bullish HTF trend", None, None
+
+        overridden_sl = round(top2_high + (m5_atr * config.veb_sl_atr_buffer), 5)
+        overridden_tp = round(entry_price - abs(entry_price - overridden_sl) * config.veb_min_rr, 5)
+        return True, "Volatility Expansion Breakout SELL confirmed", overridden_sl, overridden_tp
+
+    return False, "Volatility Expansion Breakout only validates BUY or SELL", None, None
+
+
 VALIDATOR_REGISTRY: Dict[str, ValidatorFunction] = {
     "moving average": _validate_ma_crossover,
     "ma crossover": _validate_ma_crossover,
     "bollinger": _validate_bollinger_reversion,
     "rsi trend pullback": _validate_rsi_trend_pullback,
+    "volatility expansion breakout": _validate_volatility_expansion_breakout,
+    "volatility expansion": _validate_volatility_expansion_breakout,
+    "w-bottom": _validate_volatility_expansion_breakout,
+    "m-top": _validate_volatility_expansion_breakout,
 }
 
 

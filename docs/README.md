@@ -53,6 +53,7 @@
 - [Strategy Research Pivot](./research/strategy-research-pivot.md)
 - [Quant Research Next Steps](./research/quant-research-next-steps.md)
 - [RSI Trend Pullback Research](./research/rsi_trend_pullback_0503.md)
+- [Volatility Expansion Breakout Research Candidate](./research/volatility-expansion-breakout-research-candidate.md)
 
 ## Roadmap
 

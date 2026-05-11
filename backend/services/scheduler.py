@@ -14,6 +14,8 @@ from backend.features.trading.persistence.trigger_store import (
     create_trigger_run,
     add_trigger_event
 )
+from backend.features.trading.operations.position_tracker import load_tracked_positions
+from backend.features.trading.risk_controls import apply_live_trigger_cooldown, has_open_tracked_position
 from backend.services.trading_service import run_trading_workflow_async
 from backend.features.trading.market_hours import is_market_open
 
@@ -138,6 +140,9 @@ class TriggerScheduler:
                 logger.error(f"Failed to calculate next trigger for rule {rule_id}. Skipping.")
                 continue
             
+            if rule.get("mode", "paper") == "live":
+                new_next_dt = apply_live_trigger_cooldown(new_next_dt, now=now, mode="live")
+
             new_next_iso = new_next_dt.replace(microsecond=0).isoformat()
             now_iso = now.replace(microsecond=0).isoformat()
 
@@ -152,6 +157,31 @@ class TriggerScheduler:
                         **log_base,
                         "event": "trigger.scheduler.rule_skipped",
                         "skip_reason": "market_hours_skip",
+                        "next_trigger_at": new_next_iso,
+                    },
+                )
+                continue
+
+            if rule.get("mode", "paper") == "live" and has_open_tracked_position(load_tracked_positions(), symbol=rule.get("symbol"), mode="live"):
+                update_rule_last_triggered(None, rule_id, now_iso, new_next_iso)
+                trigger_id = create_trigger_run(None, {
+                    "rule_id": rule_id,
+                    "symbol": rule["symbol"],
+                    "timeframes": json.loads(rule["timeframes_json"]),
+                    "mode": rule["mode"],
+                    "status": "skipped",
+                    "error_message": "Live trigger blocked: open tracked position exists",
+                    "scheduled_at": now_iso
+                })
+                add_trigger_event(None, trigger_id, "skipped", message="Skipped due to open tracked position")
+                logger.warning(
+                    "⏰ Scheduler: Skipping rule %s (%s). Reason: open_position_lock. Next: %s",
+                    rule_id, rule.get("symbol"), new_next_iso,
+                    extra={
+                        **log_base,
+                        "event": "trigger.scheduler.rule_skipped",
+                        "skip_reason": "open_position_lock",
+                        "trigger_id": trigger_id,
                         "next_trigger_at": new_next_iso,
                     },
                 )

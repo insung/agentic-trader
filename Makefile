@@ -160,6 +160,9 @@ VEB_LOOKBACKS ?= 30,45,60
 VEB_ATR_EXPANSIONS ?= 1.5,2.0
 VEB_ADX_MINS ?= 20,25
 VEB_SL_ATR_BUFFERS ?= 0.5
+VEB_BANDWIDTH_WINDOWS ?= 0
+VEB_BANDWIDTH_QUANTILES ?= 0
+VEB_BANDWIDTH_EXPANSION_RATIOS ?= 0
 RANDOM_SEED ?= 42
 RANDOM_ENTRY_PROB ?= 0.01
 RANDOM_LONG_BIAS ?= 0.5
@@ -228,6 +231,9 @@ quant-run: venv
 		--veb-atr-expansions "$(VEB_ATR_EXPANSIONS)" \
 		--veb-adx-mins "$(VEB_ADX_MINS)" \
 		--veb-sl-atr-buffers "$(VEB_SL_ATR_BUFFERS)" \
+		--veb-bandwidth-windows "$(VEB_BANDWIDTH_WINDOWS)" \
+		--veb-bandwidth-quantiles "$(VEB_BANDWIDTH_QUANTILES)" \
+		--veb-bandwidth-expansion-ratios "$(VEB_BANDWIDTH_EXPANSION_RATIOS)" \
 		--random-seed $(RANDOM_SEED) \
 		--random-entry-prob $(RANDOM_ENTRY_PROB) \
 		--random-long-bias $(RANDOM_LONG_BIAS) \

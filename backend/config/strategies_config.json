@@ -86,6 +86,33 @@
       ],
       "minimum_risk_reward": 2.0,
       "description": "Trend continuation strategy combining EMA/ADX trend filters with RSI pullbacks."
+    },
+    {
+      "name": "Volatility Expansion Breakout",
+      "file": "volatility_expansion_breakout.md",
+      "allowed_regimes": [
+        "High Volatility",
+        "Bullish",
+        "Bearish"
+      ],
+      "required_timeframes": [
+        "M5",
+        "M15"
+      ],
+      "profiles": [
+        {
+          "name": "btc_m5_m15_paper_candidate",
+          "allowed_symbols": [
+            "BTCUSD"
+          ],
+          "primary_timeframe": "M5",
+          "confirmation_timeframes": [
+            "M15"
+          ]
+        }
+      ],
+      "minimum_risk_reward": 2.0,
+      "description": "BTCUSD paper-candidate volatility expansion breakout using W/M patterns, ADX/ATR momentum, and Bollinger bandwidth expansion filtering."
     }
   ]
 }

@@ -92,6 +92,50 @@ def build_decision_context(final_state: Dict[str, Any], order_result: Optional[D
     }
 
 
+def _extract_strategy_metadata(decision_context: Dict[str, Any], action: str) -> Dict[str, Any]:
+    strategy_hypothesis = decision_context.get("strategy_hypothesis", {}) or {}
+    final_order = decision_context.get("final_order", {}) or {}
+    metadata: Dict[str, Any] = {}
+
+    for source in (
+        strategy_hypothesis.get("strategy_metadata", {}),
+        final_order.get("strategy_metadata", {}),
+        strategy_hypothesis,
+        final_order,
+    ):
+        if not isinstance(source, dict):
+            continue
+        for key in (
+            "strategy",
+            "selected_strategy",
+            "primary_timeframe",
+            "confirmation_timeframes",
+            "neckline",
+            "invalidation_rule",
+        ):
+            value = source.get(key)
+            if value not in (None, "") and key not in metadata:
+                metadata[key] = value
+
+    strategy_name = str(
+        metadata.get("strategy")
+        or metadata.get("selected_strategy")
+        or strategy_hypothesis.get("selected_strategy")
+        or final_order.get("strategy")
+        or ""
+    )
+    if strategy_name:
+        metadata["strategy"] = strategy_name
+    metadata.pop("selected_strategy", None)
+
+    if not metadata.get("invalidation_rule") and "volatility expansion" in strategy_name.lower():
+        metadata["invalidation_rule"] = "two_consecutive_neckline_breaks"
+    if action.upper() in {"BUY", "SELL"} and metadata.get("neckline") is not None:
+        metadata["direction"] = action.upper()
+
+    return metadata
+
+
 def track_open_position(
     *,
     mode: str,
@@ -106,6 +150,7 @@ def track_open_position(
 ) -> Dict[str, Any]:
     ticket = order_result.get("ticket") or order_result.get("order") or order_result.get("deal")
     trade_id = str(ticket or f"{symbol}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}")
+    strategy_metadata = _extract_strategy_metadata(decision_context, action)
     tracked = {
         "trade_id": trade_id,
         "ticket": ticket,
@@ -117,6 +162,11 @@ def track_open_position(
         "sl": sl,
         "tp": tp,
         "lot_size": lot_size,
+        "strategy_metadata": strategy_metadata,
+        "invalidation_state": {
+            "consecutive_breaches": 0,
+            "last_checked_price": None,
+        },
         "order_result": order_result,
         "decision_context": decision_context,
     }
@@ -194,6 +244,8 @@ def _build_closed_trade(position: Dict[str, Any], result: str, exit_reason: str,
         "sl": position.get("sl"),
         "tp": position.get("tp"),
         "lot_size": position.get("lot_size"),
+        "strategy_metadata": position.get("strategy_metadata", {}),
+        "invalidation_state": position.get("invalidation_state", {}),
         "result": result,
         "exit_reason": exit_reason,
         "pnl": pnl,
@@ -210,6 +262,24 @@ def _close_paper_position(position: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     tp = float(position.get("tp", 0.0))
     bid = float(price.get("bid") or price.get("last") or 0.0)
     ask = float(price.get("ask") or price.get("last") or 0.0)
+    current_price = bid if action == "BUY" else ask
+
+    strategy_metadata = position.get("strategy_metadata", {}) or {}
+    neckline = strategy_metadata.get("neckline")
+    invalidation_rule = strategy_metadata.get("invalidation_rule")
+    if neckline is not None and invalidation_rule == "two_consecutive_neckline_breaks":
+        breach = (action == "BUY" and current_price < float(neckline)) or (action == "SELL" and current_price > float(neckline))
+        state = dict(position.get("invalidation_state", {}) or {})
+        consecutive_breaches = int(state.get("consecutive_breaches", 0) or 0)
+        if breach:
+            consecutive_breaches += 1
+        else:
+            consecutive_breaches = 0
+        state["consecutive_breaches"] = consecutive_breaches
+        state["last_checked_price"] = current_price
+        position["invalidation_state"] = state
+        if consecutive_breaches >= 2:
+            return _build_closed_trade(position, "INVALIDATED", "Neckline invalidation", current_price, _calculate_pnl(position, current_price))
 
     if action == "BUY":
         if bid <= sl:

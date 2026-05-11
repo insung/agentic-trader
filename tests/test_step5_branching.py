@@ -62,7 +62,10 @@ async def test_live_execution_branching(
     
     # Mock validate_strategy_setup to ensure it doesn't block the path
     with patch("backend.services.trading_service.resolve_strategy_profile", return_value=("M15", ["M30"])), \
-         patch("backend.services.trading_service.validate_strategy_setup", return_value=(True, "Success", None, None)):
+         patch("backend.services.trading_service.validate_strategy_setup", return_value=(True, "Success", None, None)), \
+         patch("backend.services.trading_service.get_account_summary", return_value={"balance": 10000.0, "equity": 10000.0}), \
+         patch("backend.services.trading_service.get_deals_history", return_value=[]), \
+         patch("backend.services.trading_service.load_tracked_positions", return_value=[]):
         # Test Case A: Live Failure (ticket=0)
         failed_result = OrderResult(
             success=False,

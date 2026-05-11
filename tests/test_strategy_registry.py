@@ -1,5 +1,5 @@
 import pytest
-from backend.workflows.strategy_registry import resolve_strategy_profile
+from backend.workflows.strategy_registry import load_strategy_contract, read_strategies, resolve_strategy_profile
 
 def test_resolve_strategy_profile_priority():
     strategy_contract = {
@@ -84,3 +84,31 @@ def test_resolve_strategy_profile_fallback():
     ptf, ctf = resolve_strategy_profile(strategy_contract, ["M15"])
     assert ptf is None
     assert ctf == []
+
+
+def test_volatility_expansion_breakout_promotes_btc_only_after_evidence_gate():
+    contract = load_strategy_contract("Volatility Expansion Breakout")
+    assert contract["name"] == "Volatility Expansion Breakout"
+    assert contract["required_timeframes"] == ["M5", "M15"]
+
+    btc_ptf, btc_ctf = resolve_strategy_profile(contract, ["M5", "M15"], "BTCUSD")
+    assert btc_ptf == "M5"
+    assert btc_ctf == ["M15"]
+
+    nas_ptf, nas_ctf = resolve_strategy_profile(contract, ["M5", "M15"], "NAS100ft.r")
+    assert nas_ptf is None
+    assert nas_ctf == []
+
+    btc_injected = read_strategies(
+        market_regime="High Volatility",
+        current_timeframes=["M5", "M15"],
+        symbol="BTCUSD",
+    )
+    assert "Volatility Expansion Breakout" in btc_injected
+
+    nas_injected = read_strategies(
+        market_regime="High Volatility",
+        current_timeframes=["M5", "M15"],
+        symbol="NAS100ft.r",
+    )
+    assert "Volatility Expansion Breakout" not in nas_injected

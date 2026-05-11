@@ -11,12 +11,14 @@ logger = logging.getLogger(__name__)
 
 from backend.workflows.graph import get_compiled_graph
 from backend.features.trading.adapters.mt5_execution import MT5Client
+from backend.features.trading.adapters.mt5_account import get_account_summary, get_deals_history
 from backend.features.trading.adapters.paper_execution import execute_mock_order
 from backend.core.state_models import Order, OrderAction, OrderResult
 from backend.features.trading.guardrails import validate_order_prices, enforce_one_percent_rule
+from backend.features.trading.risk_controls import derive_live_risk_state, has_open_tracked_position
 from backend.features.trading.strategy_validators import validate_strategy_setup
 from backend.workflows.strategy_registry import resolve_strategy_profile, load_strategy_contract
-from backend.features.trading.operations.position_tracker import build_decision_context, track_open_position
+from backend.features.trading.operations.position_tracker import build_decision_context, load_tracked_positions, track_open_position
 from backend.features.trading.usecase import TradeExecutionUseCase
 from backend.features.trading.persistence.trigger_store import (
     create_trigger_run,
@@ -380,6 +382,66 @@ async def run_trading_workflow_async(
                 })
                 return
 
+            live_account_info = get_account_summary()
+            if not live_account_info:
+                reject_reason = "Risk management blocked LIVE order: account info unavailable"
+                logger.warning(
+                    "🛡️ Trading Service: LIVE guardrail REJECTED. %s",
+                    reject_reason,
+                    extra=log_extra(
+                        "trigger.guardrail.rejected",
+                        blocked_stage="risk_state",
+                        failure_reason=reject_reason,
+                        final_action=action,
+                    ),
+                )
+                add_trigger_event(None, trigger_id, "guardrail_rejected", message=reject_reason)
+                finalize_run(status="blocked", final_action=action, error_message=reject_reason, guardrail_result={
+                    "type": "risk_state",
+                    "success": False,
+                    "message": reject_reason,
+                })
+                return
+
+            current_loss_pct, today_trade_count = derive_live_risk_state(
+                account_info=live_account_info,
+                symbol=symbol,
+                deals_history=get_deals_history(days=2),
+                now=datetime.now(timezone.utc),
+            )
+            logger.info(
+                "📊 Trading Service: LIVE risk state for %s. loss_pct=%.2f trades_today=%d",
+                symbol,
+                current_loss_pct,
+                today_trade_count,
+                extra=log_extra(
+                    "trigger.risk_state.derived",
+                    current_loss_pct=current_loss_pct,
+                    today_trade_count=today_trade_count,
+                    final_action=action,
+                ),
+            )
+
+            if has_open_tracked_position(load_tracked_positions(), symbol=symbol, mode="live"):
+                reject_reason = f"Risk management blocked LIVE order: open tracked position exists for {symbol}"
+                logger.warning(
+                    "🛡️ Trading Service: LIVE guardrail REJECTED. %s",
+                    reject_reason,
+                    extra=log_extra(
+                        "trigger.guardrail.rejected",
+                        blocked_stage="open_position_lock",
+                        failure_reason=reject_reason,
+                        final_action=action,
+                    ),
+                )
+                add_trigger_event(None, trigger_id, "guardrail_rejected", message=reject_reason)
+                finalize_run(status="blocked", final_action=action, error_message=reject_reason, guardrail_result={
+                    "type": "open_position_lock",
+                    "success": False,
+                    "message": reject_reason,
+                })
+                return
+
             logger.info(
                 "📤 Trading Service: Submitting LIVE order for %s. lot=%.2f",
                 symbol,
@@ -390,8 +452,8 @@ async def run_trading_workflow_async(
             usecase = TradeExecutionUseCase(MT5Client())
             result = usecase.execute_trade(
                 order=order,
-                current_loss_pct=0.0, 
-                today_trade_count=0,
+                current_loss_pct=current_loss_pct,
+                today_trade_count=today_trade_count,
                 account_balance=account_balance,
                 risk_per_trade_pct=risk_per_trade_pct,
                 trigger_id=trigger_id,

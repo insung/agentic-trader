@@ -13,3 +13,7 @@
 - LLM은 매매 orchestrator가 아닙니다. FastAPI와 LangGraph가 제어 흐름을 통제합니다.
 - 주문/지표/리스크 검증은 Python deterministic gate가 담당합니다.
 - `.agents/agents/*.md`는 Gemini CLI agent가 아니라 LangGraph 런타임용 system prompt template입니다.
+
+## Track Workflow
+
+- Gemini CLI에서 `track-agent`를 사용할 때도 root `AGENTS.md`를 먼저 따릅니다.

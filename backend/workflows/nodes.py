@@ -284,6 +284,184 @@ def execute_order_node(state: AgentState) -> Dict[str, Any]:
     }
     return {"order_result": order_result_dict, "final_order": final_order_payload}
 
+
+def _normalize_lesson_evidence(review_log: Dict[str, Any], closed_trade: Dict[str, Any], decision_context: Dict[str, Any]) -> list[str]:
+    evidence = review_log.get("lesson_evidence", [])
+    if isinstance(evidence, str):
+        evidence = [evidence]
+    if not isinstance(evidence, list):
+        evidence = []
+
+    normalized = [str(item).strip() for item in evidence if str(item).strip()]
+    if normalized:
+        return normalized
+
+    strategy_hypothesis = decision_context.get("strategy_hypothesis", {}) or {}
+    tech_summary = decision_context.get("tech_summary", {}) or {}
+    final_order = decision_context.get("final_order", {}) or {}
+    selected_strategy = str(
+        strategy_hypothesis.get("selected_strategy")
+        or final_order.get("strategy")
+        or review_log.get("strategy")
+        or ""
+    )
+    market_regime = str(tech_summary.get("market_regime") or "")
+    result = str(closed_trade.get("result") or "UNKNOWN")
+    exit_reason = str(closed_trade.get("exit_reason") or "unknown")
+    pnl = closed_trade.get("pnl")
+
+    fallback = [
+        f"closed_trade.result={result}",
+        f"closed_trade.exit_reason={exit_reason}",
+    ]
+    if pnl is not None:
+        fallback.append(f"closed_trade.pnl={pnl}")
+    if selected_strategy:
+        fallback.append(f"strategy={selected_strategy}")
+    if market_regime:
+        fallback.append(f"market_regime={market_regime}")
+    if final_order.get("action"):
+        fallback.append(f"final_order.action={final_order.get('action')}")
+    return fallback
+
+
+def _fallback_lesson_root_cause(closed_trade: Dict[str, Any], decision_context: Dict[str, Any]) -> str:
+    result = str(closed_trade.get("result") or "").upper()
+    exit_reason = str(closed_trade.get("exit_reason") or "").strip()
+    strategy_hypothesis = decision_context.get("strategy_hypothesis", {}) or {}
+    selected_strategy = str(strategy_hypothesis.get("selected_strategy") or "").strip()
+
+    if result == "TP_HIT":
+        return "The setup followed through after entry and reached the planned target."
+    if result == "SL_HIT":
+        return "The setup failed after entry and price moved against the position until the stop loss was hit."
+    if result == "CLOSED":
+        return f"The position was closed without resolving the thesis; exit reason was {exit_reason or 'Closed'}."
+    if result == "INVALIDATED":
+        return "The post-entry invalidation rule triggered before the trade could complete its thesis."
+    if selected_strategy:
+        return f"The {selected_strategy} setup did not receive enough follow-through to confirm the entry thesis."
+    return "The trade outcome did not provide a clear validation of the entry thesis."
+
+
+def _fallback_next_trade_rule(review_log: Dict[str, Any], closed_trade: Dict[str, Any], decision_context: Dict[str, Any]) -> str:
+    strategy_hypothesis = decision_context.get("strategy_hypothesis", {}) or {}
+    final_order = decision_context.get("final_order", {}) or {}
+    tech_summary = decision_context.get("tech_summary", {}) or {}
+    selected_strategy = str(
+        strategy_hypothesis.get("selected_strategy")
+        or final_order.get("strategy")
+        or review_log.get("strategy")
+        or "the setup"
+    ).strip()
+    market_regime = str(tech_summary.get("market_regime") or "").strip()
+    result = str(closed_trade.get("result") or "").upper()
+
+    if result == "TP_HIT":
+        return f"Require the same {selected_strategy} setup to preserve the existing entry and exit rules before scaling size."
+    if result == "SL_HIT":
+        return f"Wait for stronger confirmation in {selected_strategy} before entering again, especially if the market is still {market_regime or 'unclear'}."
+    if result == "CLOSED":
+        return f"Do not treat a flat closure as confirmation; demand clearer post-entry momentum before reusing {selected_strategy}."
+    return f"Use the same {selected_strategy} only when the post-entry context is consistent with the validated thesis."
+
+
+def _normalize_quality_fields(review_log: Dict[str, Any], closed_trade: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(review_log)
+    result = str(closed_trade.get("result") or "").upper()
+    pnl = closed_trade.get("pnl")
+
+    process_quality = str(normalized.get("process_quality") or "").strip()
+    outcome_quality = str(normalized.get("outcome_quality") or "").strip()
+    trade_quality_label = str(normalized.get("trade_quality_label") or "").strip()
+    rule_adherence = normalized.get("rule_adherence")
+
+    if not process_quality:
+        process_quality = "unknown"
+    if not outcome_quality:
+        if result == "TP_HIT":
+            outcome_quality = "favorable"
+        elif result == "SL_HIT":
+            outcome_quality = "unfavorable"
+        elif result == "INVALIDATED":
+            outcome_quality = "protective"
+        elif result == "CLOSED" and pnl == 0:
+            outcome_quality = "neutral"
+        elif result == "CLOSED":
+            outcome_quality = "mixed"
+        else:
+            outcome_quality = "unknown"
+    if rule_adherence is False:
+        trade_quality_label = "bad_trade"
+        if not process_quality or process_quality == "unknown":
+            process_quality = "poor"
+    elif rule_adherence is True:
+        if result == "TP_HIT" and outcome_quality == "favorable":
+            trade_quality_label = "good_trade"
+            if not process_quality or process_quality == "unknown":
+                process_quality = "good"
+        else:
+            trade_quality_label = "mixed_trade"
+    elif not trade_quality_label:
+        trade_quality_label = "mixed_trade"
+
+    normalized["process_quality"] = process_quality
+    normalized["outcome_quality"] = outcome_quality
+    normalized["trade_quality_label"] = trade_quality_label
+    normalized["rule_adherence"] = rule_adherence
+    return normalized
+
+
+def _normalize_review_log(review_log: Dict[str, Any], closed_trade: Dict[str, Any], decision_context: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(review_log)
+    normalized = _normalize_quality_fields(normalized, closed_trade)
+    normalized["lesson_evidence"] = _normalize_lesson_evidence(normalized, closed_trade, decision_context)
+    normalized["lesson_root_cause"] = str(normalized.get("lesson_root_cause") or "").strip() or _fallback_lesson_root_cause(closed_trade, decision_context)
+    normalized["next_trade_rule"] = str(normalized.get("next_trade_rule") or "").strip() or _fallback_next_trade_rule(normalized, closed_trade, decision_context)
+    if not str(normalized.get("trade_quality_label") or "").strip():
+        normalized["trade_quality_label"] = "mixed_trade"
+
+    confidence_value = normalized.get("confidence", 0.5)
+    try:
+        confidence = float(confidence_value)
+    except (TypeError, ValueError):
+        confidence = 0.5
+    normalized["confidence"] = max(0.0, min(confidence, 1.0))
+
+    result = str(closed_trade.get("result") or "UNKNOWN")
+    pnl = closed_trade.get("pnl")
+    exit_reason = str(closed_trade.get("exit_reason") or "unknown")
+    evidence_text = "; ".join(normalized["lesson_evidence"][:4])
+    normalized["lessons_learned"] = (
+        f"Process quality: {normalized['process_quality']}. "
+        f"Outcome quality: {normalized['outcome_quality']}. "
+        f"Trade label: {normalized['trade_quality_label']}. "
+        f"Rule adherence: {normalized['rule_adherence']}. "
+        f"Outcome: {result} with pnl {pnl if pnl is not None else 'n/a'} and exit reason {exit_reason}. "
+        f"Root cause: {normalized['lesson_root_cause']}. "
+        f"Evidence: {evidence_text}. "
+        f"Next trade rule: {normalized['next_trade_rule']}."
+    )
+    return normalized
+
+
+def _render_review_markdown(review_log: Dict[str, Any]) -> str:
+    lesson_evidence = review_log.get("lesson_evidence", [])
+    evidence_block = "\n".join(f"- {item}" for item in lesson_evidence) if lesson_evidence else "- No evidence recorded"
+    return (
+        f"# Trade Review Log\n\n"
+        f"## Summary\n{review_log.get('trade_summary', '')}\n\n"
+        f"## Risk Assessment\n{review_log.get('risk_assessment', '')}\n\n"
+        f"## Process Quality\n{review_log.get('process_quality', '')}\n\n"
+        f"## Outcome Quality\n{review_log.get('outcome_quality', '')}\n\n"
+        f"## Trade Classification\n{review_log.get('trade_quality_label', '')} / rule_adherence={review_log.get('rule_adherence', '')}\n\n"
+        f"## Root Cause\n{review_log.get('lesson_root_cause', '')}\n\n"
+        f"## Evidence\n{evidence_block}\n\n"
+        f"## Next Trade Rule\n{review_log.get('next_trade_rule', '')}\n\n"
+        f"## Lessons Learned\n{review_log.get('lessons_learned', '')}\n"
+    )
+
+
 def risk_reviewer_node(state: AgentState) -> Dict[str, Any]:
     """Node 5: Risk Reviewer reviews a closed trade and logs the result."""
     trigger_id = getattr(state, "trigger_id", "N/A")
@@ -316,7 +494,7 @@ def risk_reviewer_node(state: AgentState) -> Dict[str, Any]:
     
     try:
         response = _invoke_llm_with_retry(structured_llm, messages)
-        review_log = response.model_dump()
+        review_log = _normalize_review_log(response.model_dump(), closed_trade, decision_context)
         
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         docs_dir = os.path.join(base_dir, "trading_logs")
@@ -328,21 +506,10 @@ def risk_reviewer_node(state: AgentState) -> Dict[str, Any]:
             safe_filename += ".md"
             
         file_path = os.path.join(docs_dir, safe_filename)
-        
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(f"# Trade Review Log\n\n")
-            f.write(f"**Date**: {datetime.now().isoformat()}\n\n")
-            f.write(f"## Summary\n{review_log.get('trade_summary', '')}\n\n")
-            f.write(f"## Risk Assessment\n{review_log.get('risk_assessment', '')}\n\n")
-            f.write(f"## Lessons Learned\n{review_log.get('lessons_learned', '')}\n")
+        markdown_body = _render_review_markdown(review_log)
 
-        markdown_body = (
-            f"# Trade Review Log\n\n"
-            f"**Date**: {datetime.now().isoformat()}\n\n"
-            f"## Summary\n{review_log.get('trade_summary', '')}\n\n"
-            f"## Risk Assessment\n{review_log.get('risk_assessment', '')}\n\n"
-            f"## Lessons Learned\n{review_log.get('lessons_learned', '')}\n"
-        )
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(markdown_body)
         store_trade_review(
             DEFAULT_TRADING_LOG_DB_PATH,
             review_id=os.path.splitext(safe_filename)[0],
@@ -352,6 +519,10 @@ def risk_reviewer_node(state: AgentState) -> Dict[str, Any]:
             source_path=file_path,
             summary=review_log.get("trade_summary", ""),
             risk_assessment=review_log.get("risk_assessment", ""),
+            process_quality=review_log.get("process_quality", ""),
+            outcome_quality=review_log.get("outcome_quality", ""),
+            trade_quality_label=review_log.get("trade_quality_label", ""),
+            rule_adherence=review_log.get("rule_adherence"),
             lessons_learned=review_log.get("lessons_learned", ""),
             markdown_body=markdown_body,
             raw_payload={
@@ -363,11 +534,25 @@ def risk_reviewer_node(state: AgentState) -> Dict[str, Any]:
                 "decision_context": decision_context,
                 "closed_trade": closed_trade,
                 "review_log": review_log,
+                "review_quality": {
+                    "process_quality": review_log.get("process_quality"),
+                    "outcome_quality": review_log.get("outcome_quality"),
+                    "trade_quality_label": review_log.get("trade_quality_label"),
+                    "rule_adherence": review_log.get("rule_adherence"),
+                    "confidence": review_log.get("confidence"),
+                    "lesson_evidence_count": len(review_log.get("lesson_evidence", [])),
+                },
             },
         )
 
+        review_id = os.path.splitext(safe_filename)[0]
         logger.info("[Node 5] Review log saved to %s", file_path, extra={"trigger_id": trigger_id, "symbol": symbol})
-        return {"review_log": review_log, "error_flag": False}
+        return {
+            "review_log": review_log,
+            "review_id": review_id,
+            "review_markdown_path": file_path,
+            "error_flag": False,
+        }
     except Exception as e:
         logger.error("LLM API completely failed in risk_reviewer: %s", e, extra={"trigger_id": trigger_id, "symbol": symbol})
         return {"error_flag": True}

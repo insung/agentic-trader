@@ -28,6 +28,7 @@ from backend.api.v1.triggers import (
     get_trigger_details as api_get_trigger_details,
     list_trigger_events as api_list_trigger_events,
     get_trigger_execution_snapshot as api_get_trigger_execution_snapshot,
+    get_trigger_trade_journal as api_get_trigger_trade_journal,
 )
 
 @pytest.fixture
@@ -611,3 +612,71 @@ def test_api_trigger_events_and_snapshot(temp_trigger_db):
 
         snapshot = asyncio.run(api_get_trigger_execution_snapshot(trigger_id))
         assert snapshot["final_state"]["status"] == "ok"
+
+
+def test_api_trigger_trade_journal_aggregates_snapshot_and_journal(temp_trigger_db):
+    trigger_id = "trig_api_journal"
+
+    with patch(
+        "backend.api.v1.triggers.get_trigger_run",
+        side_effect=lambda trigger_id: get_trigger_run(temp_trigger_db, trigger_id),
+    ), patch(
+        "backend.api.v1.triggers.get_trigger_snapshot",
+        side_effect=lambda trigger_id: get_trigger_snapshot(temp_trigger_db, trigger_id),
+    ), patch(
+        "backend.api.v1.triggers.get_trade_journals_by_trigger",
+        side_effect=lambda trigger_id: [],
+    ):
+        import asyncio
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(api_get_trigger_trade_journal(trigger_id))
+        assert exc.value.status_code == 404
+
+    create_trigger_run(
+        temp_trigger_db,
+        {"trigger_id": trigger_id, "symbol": "EURUSD", "mode": "paper", "status": "success"},
+    )
+    save_trigger_snapshot(temp_trigger_db, trigger_id, {"final_order": {"action": "BUY"}})
+    journal_db = {
+        "trade_id": "T1",
+        "trigger_id": trigger_id,
+        "mode": "paper",
+        "symbol": "EURUSD",
+        "action": "BUY",
+        "status": "reviewed",
+        "opened_at": "2026-05-11T20:00:00",
+        "entry_price": 1.0,
+        "sl": 0.9,
+        "tp": 1.2,
+        "lot_size": 0.1,
+        "closed_trade": {"trade_id": "T1", "exit_reason": "Take Profit"},
+        "review_log": {"trade_summary": "summary"},
+    }
+    from backend.features.trading.persistence.trading_log_store import upsert_trade_journal
+
+    upsert_trade_journal(str(temp_trigger_db), journal_db)
+
+    with patch(
+        "backend.api.v1.triggers.get_trigger_run",
+        side_effect=lambda trigger_id: get_trigger_run(temp_trigger_db, trigger_id),
+    ), patch(
+        "backend.api.v1.triggers.get_trigger_snapshot",
+        side_effect=lambda trigger_id: get_trigger_snapshot(temp_trigger_db, trigger_id),
+    ), patch(
+        "backend.api.v1.triggers.get_trade_journals_by_trigger",
+        side_effect=lambda trigger_id: [
+            {
+                "trade_id": "T1",
+                "trigger_id": trigger_id,
+                "status": "reviewed",
+                "closed_trade": {"trade_id": "T1", "exit_reason": "Take Profit"},
+                "review_log": {"trade_summary": "summary"},
+            }
+        ],
+    ):
+        import asyncio
+        payload = asyncio.run(api_get_trigger_trade_journal(trigger_id))
+
+    assert payload["trigger_id"] == trigger_id
+    assert payload["snapshot"]["final_order"]["action"] == "BUY"
+    assert payload["trade_journals"][0]["closed_trade"]["exit_reason"] == "Take Profit"

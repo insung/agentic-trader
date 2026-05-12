@@ -499,7 +499,13 @@ async def run_trading_workflow_async(
                 )
             )
             add_trigger_event(None, trigger_id, "order_acked", message=f"Order success: ticket {order_result_data.get('ticket')}", payload=order_result_data)
-            decision_context = build_decision_context(final_state, order_result_data)
+            decision_context = build_decision_context(
+                final_state,
+                order_result_data,
+                trigger_id=trigger_id,
+                workflow_run_id=workflow_run_id,
+                rule_id=rule_id,
+            )
             track_open_position(
                 mode=mode,
                 symbol=symbol,
@@ -510,6 +516,9 @@ async def run_trading_workflow_async(
                 lot_size=order.lot_size,
                 order_result=order_result_data,
                 decision_context=decision_context,
+                trigger_id=trigger_id,
+                workflow_run_id=workflow_run_id,
+                rule_id=rule_id,
             )
             final_state["decision_context"] = decision_context
             finalize_run(
@@ -596,7 +605,13 @@ async def run_trading_workflow_async(
                     )
                 )
                 add_trigger_event(None, trigger_id, "order_acked", message=f"Order success: ticket {order_result_data.get('ticket')}", payload=order_result_data)
-                decision_context = build_decision_context(final_state, order_result_data)
+                decision_context = build_decision_context(
+                    final_state,
+                    order_result_data,
+                    trigger_id=trigger_id,
+                    workflow_run_id=workflow_run_id,
+                    rule_id=rule_id,
+                )
                 track_open_position(
                     mode=mode,
                     symbol=symbol,
@@ -607,6 +622,9 @@ async def run_trading_workflow_async(
                     lot_size=order.lot_size,
                     order_result=order_result_data,
                     decision_context=decision_context,
+                    trigger_id=trigger_id,
+                    workflow_run_id=workflow_run_id,
+                    rule_id=rule_id,
                 )
                 final_state["decision_context"] = decision_context
                 finalize_run(

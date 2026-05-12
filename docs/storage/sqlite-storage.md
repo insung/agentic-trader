@@ -113,6 +113,9 @@ sqlite3 -header -column backtests/data/market_data.sqlite \
 ```bash
 sqlite3 -header -column trading_logs/trading_logs.sqlite \
   "SELECT review_id, reviewed_at, substr(summary, 1, 80) AS summary FROM trade_reviews ORDER BY reviewed_at DESC LIMIT 10;"
+
+sqlite3 -header -column trading_logs/trading_logs.sqlite \
+  "SELECT trigger_id, trade_id, status, result, exit_reason, reviewed_at FROM trade_journals ORDER BY updated_at DESC LIMIT 10;"
 ```
 
 ## sqlite3 CLI 없이 조회하기
@@ -125,7 +128,7 @@ import sqlite3
 
 for path, tables in [
     ("backtests/data/market_data.sqlite", ["candles", "backtest_runs", "backtest_trades", "backtest_decisions", "backtest_reports"]),
-    ("trading_logs/trading_logs.sqlite", ["tracked_positions", "reviewed_trade_ids", "trade_reviews"]),
+    ("trading_logs/trading_logs.sqlite", ["tracked_positions", "reviewed_trade_ids", "trade_reviews", "trade_journals"]),
 ]:
     print(path)
     conn = sqlite3.connect(path)
@@ -178,7 +181,12 @@ PY
 : 이미 복기 완료한 trade id 목록입니다. 중복 복기를 막기 위한 상태입니다.
 
 `trade_reviews`
-: Risk Reviewer 복기 기록입니다. summary, risk_assessment, lessons_learned, markdown_body를 분리해 저장합니다.
+: Risk Reviewer 복기 기록입니다. summary, risk_assessment, process_quality, outcome_quality, trade_quality_label, rule_adherence, lesson_root_cause, lesson_evidence, next_trade_rule, lessons_learned, markdown_body를 분리해 저장합니다. `lessons_learned`는 단순 요약이 아니라 원인-근거-다음 규칙이 연결된 합성 텍스트로 저장하고, 세부 구조는 `raw_payload_json`에 함께 보존합니다. 과정/결과 평가는 분리하여 저장하므로, 익절했더라도 룰 위반이면 `bad_trade`로 남길 수 있습니다.
+
+`trade_journals`
+: trigger_id, trade_id, open/close/review payload를 한 row로 이어 붙인 운영 복기 라이프사이클입니다. trigger snapshot과 trade review 사이의 연결점으로 사용하며, `review_log_json`에 구조화된 복기 결과를 그대로 담아 RAG/검색용 메모리로 재사용할 수 있게 합니다.
+
+운영 DB(`trading_logs/trading_logs.sqlite`)는 2026-05-12 기준으로 이 구조를 실제 반영했으며, 기존 `trade_reviews` row는 가능한 범위에서 백필했습니다.
 
 ## 주요 명령
 

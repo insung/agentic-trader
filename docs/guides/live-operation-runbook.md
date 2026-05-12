@@ -44,6 +44,12 @@ trading_logs/trading_logs.sqlite
 4. strategy validator와 No-Trade Audit이 같은 차단 사유를 설명한다.
 5. 짧은 `MODE=live` 데모 계좌 smoke run을 한 번 수행하고, MT5 체결/로그/포지션 추적이 일치하는지 확인한다.
 
+복기 품질을 볼 때는 결과가 아니라 과정도 같이 확인합니다.
+
+- `process_quality`: 진입/청산이 전략과 룰을 지켰는지
+- `outcome_quality`: 실제 PnL과 청산 결과가 어떤지
+- `trade_quality_label`: 최종 판정입니다. 수익이 나더라도 룰을 위반하면 `bad_trade`가 될 수 있습니다.
+
 현재 상태:
 
 - `MODE=paper` 경로는 정상이다.
@@ -116,6 +122,7 @@ make reconcile
 
 - 아직 열린 포지션이면 그대로 둠
 - 이미 청산된 포지션이면 MT5 이력/현재가를 보고 `review_*.md`와 SQLite `trade_reviews` 생성
+- 청산된 포지션은 `trade_journals`에도 trigger_id/trade_id 기준으로 누적되어 `/api/v1/triggers/{trigger_id}/journal`에서 처리 흐름을 확인할 수 있음
 - 복기 완료한 ticket은 `trading_logs/reviewed_trades.json` 및 SQLite `reviewed_trade_ids`에 기록
 
 7. 복기 파일 확인

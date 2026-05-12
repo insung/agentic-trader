@@ -59,12 +59,57 @@ SCHEMA_STATEMENTS = [
       source_path TEXT,
       summary TEXT,
       risk_assessment TEXT,
+      process_quality TEXT,
+      outcome_quality TEXT,
+      trade_quality_label TEXT,
+      rule_adherence INTEGER,
       lessons_learned TEXT,
       markdown_body TEXT NOT NULL,
       raw_payload_json TEXT,
       source TEXT NOT NULL DEFAULT 'risk_reviewer',
       created_at TEXT NOT NULL
     )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS trade_journals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      trade_id TEXT NOT NULL UNIQUE,
+      trigger_id TEXT,
+      workflow_run_id TEXT,
+      rule_id TEXT,
+      mode TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      action TEXT NOT NULL,
+      status TEXT NOT NULL,
+      opened_at TEXT NOT NULL,
+      closed_at TEXT,
+      reviewed_at TEXT,
+      entry_price REAL NOT NULL,
+      exit_price REAL,
+      sl REAL NOT NULL,
+      tp REAL NOT NULL,
+      lot_size REAL NOT NULL,
+      result TEXT,
+      exit_reason TEXT,
+      strategy TEXT,
+      market_regime TEXT,
+      review_id TEXT,
+      review_markdown_path TEXT,
+      decision_context_json TEXT,
+      order_result_json TEXT,
+      closed_trade_json TEXT,
+      review_log_json TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_trade_journals_trigger_id
+    ON trade_journals (trigger_id)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_trade_journals_symbol_mode
+    ON trade_journals (symbol, mode)
     """,
 ]
 
@@ -83,10 +128,32 @@ def _connect(db_path: str) -> sqlite3.Connection:
     return connect(db_path)
 
 
+def _table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return {row[1] for row in rows}
+
+
+def _ensure_trade_review_quality_columns(conn: sqlite3.Connection) -> None:
+    columns = _table_columns(conn, "trade_reviews")
+    if not columns:
+        return
+
+    required_columns = {
+        "process_quality": "TEXT",
+        "outcome_quality": "TEXT",
+        "trade_quality_label": "TEXT",
+        "rule_adherence": "INTEGER",
+    }
+    for column_name, column_type in required_columns.items():
+        if column_name not in columns:
+            conn.execute(f"ALTER TABLE trade_reviews ADD COLUMN {column_name} {column_type}")
+
+
 def init_trading_log_db(db_path: str = DEFAULT_TRADING_LOG_DB_PATH) -> None:
     with _connect(db_path) as conn:
         for statement in SCHEMA_STATEMENTS:
             conn.execute(statement)
+        _ensure_trade_review_quality_columns(conn)
         conn.commit()
 
 
@@ -94,6 +161,15 @@ def _json_text(value: Any) -> Optional[str]:
     if value is None:
         return None
     return json.dumps(value, ensure_ascii=False, default=str)
+
+
+def _parse_json(value: Optional[str]) -> Any:
+    if not value:
+        return {}
+    try:
+        return json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return {}
 
 
 def replace_tracked_positions(db_path: str, positions: Iterable[Dict[str, Any]]) -> None:
@@ -230,20 +306,25 @@ def store_trade_review(
     source_path: Optional[str],
     summary: Optional[str],
     risk_assessment: Optional[str],
-    lessons_learned: Optional[str],
-    markdown_body: str,
+    process_quality: Optional[str] = None,
+    outcome_quality: Optional[str] = None,
+    trade_quality_label: Optional[str] = None,
+    rule_adherence: Optional[bool] = None,
+    lessons_learned: Optional[str] = None,
+    markdown_body: str = "",
     raw_payload: Optional[Dict[str, Any]] = None,
     source: str = "risk_reviewer",
-) -> str:
+    ) -> str:
     init_trading_log_db(db_path)
     with _connect(db_path) as conn:
         conn.execute(
             """
             INSERT INTO trade_reviews (
                 review_id, trade_id, symbol, reviewed_at, source_path,
-                summary, risk_assessment, lessons_learned, markdown_body,
+                summary, risk_assessment, process_quality, outcome_quality,
+                trade_quality_label, rule_adherence, lessons_learned, markdown_body,
                 raw_payload_json, source, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(review_id) DO UPDATE SET
                 trade_id = excluded.trade_id,
                 symbol = excluded.symbol,
@@ -251,6 +332,10 @@ def store_trade_review(
                 source_path = excluded.source_path,
                 summary = excluded.summary,
                 risk_assessment = excluded.risk_assessment,
+                process_quality = excluded.process_quality,
+                outcome_quality = excluded.outcome_quality,
+                trade_quality_label = excluded.trade_quality_label,
+                rule_adherence = excluded.rule_adherence,
                 lessons_learned = excluded.lessons_learned,
                 markdown_body = excluded.markdown_body,
                 raw_payload_json = excluded.raw_payload_json,
@@ -264,6 +349,10 @@ def store_trade_review(
                 source_path,
                 summary,
                 risk_assessment,
+                process_quality,
+                outcome_quality,
+                trade_quality_label,
+                int(rule_adherence) if rule_adherence is not None else None,
                 lessons_learned,
                 markdown_body,
                 _json_text(raw_payload),
@@ -273,3 +362,150 @@ def store_trade_review(
         )
         conn.commit()
     return review_id
+
+
+def upsert_trade_journal(db_path: str, journal: Dict[str, Any]) -> Optional[str]:
+    trade_id = str(journal.get("trade_id") or "").strip()
+    if not trade_id:
+        return None
+
+    init_trading_log_db(db_path)
+    now = _now_iso()
+    row = {
+        "trade_id": trade_id,
+        "trigger_id": journal.get("trigger_id"),
+        "workflow_run_id": journal.get("workflow_run_id"),
+        "rule_id": journal.get("rule_id"),
+        "mode": journal.get("mode", "paper"),
+        "symbol": journal.get("symbol", ""),
+        "action": str(journal.get("action", "")).upper(),
+        "status": journal.get("status", "open"),
+        "opened_at": journal.get("opened_at", journal.get("entry_time", now)),
+        "closed_at": journal.get("closed_at"),
+        "reviewed_at": journal.get("reviewed_at"),
+        "entry_price": float(journal.get("entry_price", 0.0)),
+        "exit_price": journal.get("exit_price"),
+        "sl": float(journal.get("sl", 0.0)),
+        "tp": float(journal.get("tp", 0.0)),
+        "lot_size": float(journal.get("lot_size", 0.0)),
+        "result": journal.get("result"),
+        "exit_reason": journal.get("exit_reason"),
+        "strategy": journal.get("strategy"),
+        "market_regime": journal.get("market_regime"),
+        "review_id": journal.get("review_id"),
+        "review_markdown_path": journal.get("review_markdown_path"),
+        "decision_context_json": _json_text(journal.get("decision_context")),
+        "order_result_json": _json_text(journal.get("order_result")),
+        "closed_trade_json": _json_text(journal.get("closed_trade")),
+        "review_log_json": _json_text(journal.get("review_log")),
+    }
+
+    with _connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO trade_journals (
+                trade_id, trigger_id, workflow_run_id, rule_id, mode, symbol,
+                action, status, opened_at, closed_at, reviewed_at, entry_price,
+                exit_price, sl, tp, lot_size, result, exit_reason, strategy,
+                market_regime, review_id, review_markdown_path,
+                decision_context_json, order_result_json, closed_trade_json,
+                review_log_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(trade_id) DO UPDATE SET
+                trigger_id = COALESCE(excluded.trigger_id, trade_journals.trigger_id),
+                workflow_run_id = COALESCE(excluded.workflow_run_id, trade_journals.workflow_run_id),
+                rule_id = COALESCE(excluded.rule_id, trade_journals.rule_id),
+                mode = excluded.mode,
+                symbol = excluded.symbol,
+                action = excluded.action,
+                status = excluded.status,
+                opened_at = COALESCE(excluded.opened_at, trade_journals.opened_at),
+                closed_at = COALESCE(excluded.closed_at, trade_journals.closed_at),
+                reviewed_at = COALESCE(excluded.reviewed_at, trade_journals.reviewed_at),
+                entry_price = excluded.entry_price,
+                exit_price = COALESCE(excluded.exit_price, trade_journals.exit_price),
+                sl = excluded.sl,
+                tp = excluded.tp,
+                lot_size = excluded.lot_size,
+                result = COALESCE(excluded.result, trade_journals.result),
+                exit_reason = COALESCE(excluded.exit_reason, trade_journals.exit_reason),
+                strategy = excluded.strategy,
+                market_regime = excluded.market_regime,
+                review_id = COALESCE(excluded.review_id, trade_journals.review_id),
+                review_markdown_path = COALESCE(excluded.review_markdown_path, trade_journals.review_markdown_path),
+                decision_context_json = COALESCE(excluded.decision_context_json, trade_journals.decision_context_json),
+                order_result_json = COALESCE(excluded.order_result_json, trade_journals.order_result_json),
+                closed_trade_json = COALESCE(excluded.closed_trade_json, trade_journals.closed_trade_json),
+                review_log_json = COALESCE(excluded.review_log_json, trade_journals.review_log_json),
+                updated_at = excluded.updated_at
+            """,
+            (
+                row["trade_id"],
+                row["trigger_id"],
+                row["workflow_run_id"],
+                row["rule_id"],
+                row["mode"],
+                row["symbol"],
+                row["action"],
+                row["status"],
+                row["opened_at"],
+                row["closed_at"],
+                row["reviewed_at"],
+                row["entry_price"],
+                row["exit_price"],
+                row["sl"],
+                row["tp"],
+                row["lot_size"],
+                row["result"],
+                row["exit_reason"],
+                row["strategy"],
+                row["market_regime"],
+                row["review_id"],
+                row["review_markdown_path"],
+                row["decision_context_json"],
+                row["order_result_json"],
+                row["closed_trade_json"],
+                row["review_log_json"],
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+    return trade_id
+
+
+def _row_to_trade_journal(row: sqlite3.Row) -> Dict[str, Any]:
+    data = dict(row)
+    data["decision_context"] = _parse_json(data.get("decision_context_json"))
+    data["order_result"] = _parse_json(data.get("order_result_json"))
+    data["closed_trade"] = _parse_json(data.get("closed_trade_json"))
+    data["review_log"] = _parse_json(data.get("review_log_json"))
+    return data
+
+
+def get_trade_journal_by_trade_id(
+    db_path: str = DEFAULT_TRADING_LOG_DB_PATH,
+    trade_id: str = "",
+) -> Optional[Dict[str, Any]]:
+    init_trading_log_db(db_path)
+    with _connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM trade_journals WHERE trade_id = ?",
+            (str(trade_id),),
+        ).fetchone()
+        return _row_to_trade_journal(row) if row else None
+
+
+def get_trade_journals_by_trigger(
+    db_path: str = DEFAULT_TRADING_LOG_DB_PATH,
+    trigger_id: str = "",
+) -> List[Dict[str, Any]]:
+    init_trading_log_db(db_path)
+    with _connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM trade_journals WHERE trigger_id = ? ORDER BY opened_at ASC, id ASC",
+            (str(trigger_id),),
+        ).fetchall()
+        return [_row_to_trade_journal(row) for row in rows]

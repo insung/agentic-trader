@@ -13,6 +13,7 @@ from backend.features.trading.persistence.trigger_store import (
     set_schedule_rule_enabled,
     upsert_schedule_rule,
 )
+from backend.features.trading.persistence.trading_log_store import get_trade_journals_by_trigger
 
 router = APIRouter(prefix="/api/v1/triggers")
 
@@ -89,3 +90,19 @@ async def get_trigger_execution_snapshot(trigger_id: str):
     if not snapshot:
         raise HTTPException(status_code=404, detail="Snapshot not found for this trigger")
     return snapshot
+
+
+@router.get("/{trigger_id}/journal")
+async def get_trigger_trade_journal(trigger_id: str):
+    """트리거가 어떤 주문/청산/복기 흐름으로 처리되었는지 반환합니다."""
+    run = get_trigger_run(trigger_id=trigger_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Trigger run not found")
+    snapshot = get_trigger_snapshot(trigger_id=trigger_id)
+    journals = get_trade_journals_by_trigger(trigger_id=trigger_id)
+    return {
+        "trigger_id": trigger_id,
+        "trigger": run,
+        "snapshot": snapshot,
+        "trade_journals": journals,
+    }

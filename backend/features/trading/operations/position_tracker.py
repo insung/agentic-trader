@@ -16,6 +16,7 @@ from backend.features.trading.persistence.trading_log_store import (
     load_reviewed_trade_ids as load_reviewed_trade_ids_sqlite,
     load_tracked_positions as load_tracked_positions_sqlite,
     mark_trade_reviewed as mark_trade_reviewed_sqlite,
+    upsert_trade_journal,
     replace_reviewed_trade_ids,
     replace_tracked_positions,
 )
@@ -81,8 +82,15 @@ def _dump_if_model(value: Any) -> Any:
     return value
 
 
-def build_decision_context(final_state: Dict[str, Any], order_result: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    return {
+def build_decision_context(
+    final_state: Dict[str, Any],
+    order_result: Optional[Dict[str, Any]] = None,
+    *,
+    trigger_id: Optional[str] = None,
+    workflow_run_id: Optional[str] = None,
+    rule_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    context = {
         "raw_data": final_state.get("raw_data", ""),
         "account_info": _dump_if_model(final_state.get("account_info", {})),
         "tech_summary": _dump_if_model(final_state.get("tech_summary", {})),
@@ -90,6 +98,13 @@ def build_decision_context(final_state: Dict[str, Any], order_result: Optional[D
         "final_order": _dump_if_model(final_state.get("final_order", {})),
         "order_result": _dump_if_model(order_result or final_state.get("order_result", {})),
     }
+    if trigger_id is not None:
+        context["trigger_id"] = trigger_id
+    if workflow_run_id is not None:
+        context["workflow_run_id"] = workflow_run_id
+    if rule_id is not None:
+        context["rule_id"] = rule_id
+    return context
 
 
 def _extract_strategy_metadata(decision_context: Dict[str, Any], action: str) -> Dict[str, Any]:
@@ -147,17 +162,21 @@ def track_open_position(
     lot_size: float,
     order_result: Dict[str, Any],
     decision_context: Dict[str, Any],
+    trigger_id: Optional[str] = None,
+    workflow_run_id: Optional[str] = None,
+    rule_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     ticket = order_result.get("ticket") or order_result.get("order") or order_result.get("deal")
     trade_id = str(ticket or f"{symbol}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}")
     strategy_metadata = _extract_strategy_metadata(decision_context, action)
+    opened_at = datetime.now().isoformat()
     tracked = {
         "trade_id": trade_id,
         "ticket": ticket,
         "mode": mode,
         "symbol": symbol,
         "action": action.upper(),
-        "entry_time": datetime.now().isoformat(),
+        "entry_time": opened_at,
         "entry_price": entry_price,
         "sl": sl,
         "tp": tp,
@@ -174,6 +193,28 @@ def track_open_position(
     positions = [p for p in load_tracked_positions() if str(p.get("trade_id")) != trade_id]
     positions.append(tracked)
     save_tracked_positions(positions)
+    upsert_trade_journal(
+        TRADING_LOG_DB_PATH,
+        journal={
+            "trade_id": trade_id,
+            "trigger_id": trigger_id or decision_context.get("trigger_id"),
+            "workflow_run_id": workflow_run_id or decision_context.get("workflow_run_id"),
+            "rule_id": rule_id or decision_context.get("rule_id"),
+            "mode": mode,
+            "symbol": symbol,
+            "action": action.upper(),
+            "status": "open",
+            "opened_at": opened_at,
+            "entry_price": entry_price,
+            "sl": sl,
+            "tp": tp,
+            "lot_size": lot_size,
+            "strategy": strategy_metadata.get("strategy") or strategy_metadata.get("selected_strategy"),
+            "market_regime": decision_context.get("tech_summary", {}).get("market_regime"),
+            "decision_context": decision_context,
+            "order_result": order_result,
+        },
+    )
     return tracked
 
 
@@ -219,7 +260,65 @@ def review_closed_trade(decision_context: Dict[str, Any], closed_trade: Dict[str
         decision_context=decision_context,
         closed_trade=closed_trade,
     )
-    return risk_reviewer_node(state)
+    trigger_id = decision_context.get("trigger_id") or closed_trade.get("trigger_id")
+    workflow_run_id = decision_context.get("workflow_run_id") or closed_trade.get("workflow_run_id")
+    rule_id = decision_context.get("rule_id") or closed_trade.get("rule_id")
+    review_result = risk_reviewer_node(state)
+    journal_base = {
+        "trade_id": str(closed_trade.get("trade_id")),
+        "trigger_id": trigger_id,
+        "workflow_run_id": workflow_run_id,
+        "rule_id": rule_id,
+        "mode": closed_trade.get("mode", "paper"),
+        "symbol": closed_trade.get("symbol", ""),
+        "action": str(closed_trade.get("action", "")).upper(),
+        "opened_at": closed_trade.get("entry_time") or decision_context.get("opened_at") or datetime.now().isoformat(),
+        "closed_at": closed_trade.get("exit_time"),
+        "entry_price": float(closed_trade.get("entry_price", 0.0)),
+        "exit_price": closed_trade.get("exit_price"),
+        "sl": float(closed_trade.get("sl", 0.0)),
+        "tp": float(closed_trade.get("tp", 0.0)),
+        "lot_size": float(closed_trade.get("lot_size", 0.0)),
+        "result": closed_trade.get("result"),
+        "exit_reason": closed_trade.get("exit_reason"),
+        "status": "closed",
+        "decision_context": decision_context,
+        "closed_trade": closed_trade,
+        "strategy": (decision_context.get("strategy_hypothesis", {}) or {}).get("selected_strategy"),
+        "market_regime": (decision_context.get("tech_summary", {}) or {}).get("market_regime"),
+    }
+    if review_result.get("error_flag"):
+        upsert_trade_journal(
+            TRADING_LOG_DB_PATH,
+            journal={
+                **journal_base,
+                "status": "review_failed",
+                "review_log": {"error_message": review_result.get("error_message")},
+            },
+        )
+        return review_result
+
+    review_log = review_result.get("review_log", {}) or {}
+    review_id = review_result.get("review_id") or review_log.get("save_path")
+    review_markdown_path = review_result.get("review_markdown_path") or review_log.get("save_path")
+    reviewed_at = review_log.get("reviewed_at") or closed_trade.get("exit_time")
+    upsert_trade_journal(
+        TRADING_LOG_DB_PATH,
+        journal={
+            **journal_base,
+            "status": "reviewed",
+            "reviewed_at": reviewed_at,
+            "review_id": review_id,
+            "review_markdown_path": review_markdown_path,
+            "review_log": review_log,
+        },
+    )
+    return {
+        **review_result,
+        "review_id": review_id,
+        "review_markdown_path": review_markdown_path,
+        "reviewed_at": reviewed_at,
+    }
 
 
 def _calculate_pnl(position: Dict[str, Any], exit_price: float) -> float:

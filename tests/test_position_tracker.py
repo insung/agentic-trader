@@ -29,6 +29,14 @@ def test_track_open_position_persists_strategy_metadata(monkeypatch):
 
     monkeypatch.setattr(pt, "load_tracked_positions", lambda: [])
     monkeypatch.setattr(pt, "save_tracked_positions", lambda positions: captured.setdefault("positions", copy.deepcopy(positions)))
+    monkeypatch.setattr(
+        pt,
+        "upsert_trade_journal",
+        lambda *args, **kwargs: captured.setdefault(
+            "journal",
+            copy.deepcopy(kwargs.get("journal") if "journal" in kwargs else args[1]),
+        ),
+    )
 
     tracked = pt.track_open_position(
         mode="paper",
@@ -40,6 +48,9 @@ def test_track_open_position_persists_strategy_metadata(monkeypatch):
         lot_size=1.0,
         order_result={"ticket": 101, "order": 101},
         decision_context=_base_decision_context(),
+        trigger_id="trig-1",
+        workflow_run_id="run-1",
+        rule_id="rule-1",
     )
 
     assert tracked["strategy_metadata"]["strategy"] == "Volatility Expansion Breakout"
@@ -47,6 +58,9 @@ def test_track_open_position_persists_strategy_metadata(monkeypatch):
     assert tracked["strategy_metadata"]["invalidation_rule"] == "two_consecutive_neckline_breaks"
     assert tracked["invalidation_state"]["consecutive_breaches"] == 0
     assert captured["positions"][0]["strategy_metadata"]["neckline"] == 100.0
+    assert captured["journal"]["trigger_id"] == "trig-1"
+    assert captured["journal"]["trade_id"] == tracked["trade_id"]
+    assert captured["journal"]["status"] == "open"
 
 
 def test_reconcile_tracked_positions_closes_after_two_consecutive_neckline_breaches(monkeypatch):
@@ -87,7 +101,15 @@ def test_reconcile_tracked_positions_closes_after_two_consecutive_neckline_breac
     monkeypatch.setattr(pt, "load_reviewed_trade_ids", lambda: [])
     monkeypatch.setattr(pt, "mark_trade_reviewed", lambda trade_id: reviewed.append(trade_id))
     monkeypatch.setattr(pt, "get_current_price", lambda symbol: {"bid": 99.0, "ask": 99.2, "last": 99.1})
-    monkeypatch.setattr(pt, "review_closed_trade", lambda decision_context, closed_trade: {"error_flag": False, "review_log": {"trade_summary": "ok"}})
+    monkeypatch.setattr(
+        pt,
+        "review_closed_trade",
+        lambda decision_context, closed_trade: {
+            "error_flag": False,
+            "review_log": {"trade_summary": "ok"},
+            "review_id": "review-trade-1",
+        },
+    )
 
     first = pt.reconcile_tracked_positions()
     assert first == []
@@ -100,3 +122,60 @@ def test_reconcile_tracked_positions_closes_after_two_consecutive_neckline_breac
     assert second[0]["closed_trade"]["exit_reason"] == "Neckline invalidation"
     assert reviewed == ["trade-1"]
     assert store == []
+
+
+def test_review_closed_trade_persists_journal(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(
+        pt,
+        "risk_reviewer_node",
+        lambda state: {
+            "error_flag": False,
+            "review_id": "review-trade-1",
+            "review_log": {
+                "trade_summary": "ok",
+                "risk_assessment": "risk",
+                "lessons_learned": "lesson",
+            },
+        },
+    )
+    monkeypatch.setattr(
+        pt,
+        "upsert_trade_journal",
+        lambda *args, **kwargs: captured.setdefault(
+            "journal",
+            copy.deepcopy(kwargs.get("journal") if "journal" in kwargs else args[1]),
+        ),
+    )
+
+    result = pt.review_closed_trade(
+        {
+            "trigger_id": "trig-1",
+            "workflow_run_id": "run-1",
+            "rule_id": "rule-1",
+            "strategy_hypothesis": {},
+            "final_order": {},
+        },
+        {
+            "trade_id": "trade-1",
+            "mode": "paper",
+            "symbol": "BTCUSD",
+            "action": "BUY",
+            "entry_time": "2026-05-11T20:00:00",
+            "exit_time": "2026-05-11T21:00:00",
+            "entry_price": 105.0,
+            "exit_price": 110.0,
+            "sl": 95.0,
+            "tp": 125.0,
+            "lot_size": 1.0,
+            "result": "TP_HIT",
+            "exit_reason": "Take Profit",
+            "pnl": 5.0,
+        },
+    )
+
+    assert result["review_id"] == "review-trade-1"
+    assert captured["journal"]["trade_id"] == "trade-1"
+    assert captured["journal"]["trigger_id"] == "trig-1"
+    assert captured["journal"]["status"] == "reviewed"

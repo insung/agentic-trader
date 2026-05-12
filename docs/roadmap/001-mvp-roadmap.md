@@ -164,6 +164,7 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
     *   [x] **Persistence layout 정리:** backtest/trading log/trigger SQLite store 구현을 `backend/features/trading/persistence/`로 이동하고, 기존 `backend/features/trading/*_store.py` 경로는 thin compatibility wrapper로 유지했습니다.
     *   [x] **Operations layout 정리:** position tracking/reconcile/review coordination 구현을 `backend/features/trading/operations/position_tracker.py`로 이동하고, 기존 `backend/features/trading/position_tracker.py` 경로는 compatibility wrapper로 유지했습니다. JSON/SQLite 저장 경로와 공개 함수 계약은 그대로 유지합니다.
     *   [x] **MT5 adapter 구조 정리:** MT5 connection, market data, account/history, live execution, paper execution을 `backend/features/trading/adapters/` 하위 모듈로 분리하고, 기존 `backend/features/trading/mt5_adapter.py`는 compatibility wrapper로 유지했습니다.
+    *   [x] **Trade lifecycle journal 추가:** `trading_logs/trading_logs.sqlite`의 `trade_journals` 테이블에 `trigger_id`, `trade_id`, open/close/review payload를 누적 저장하고, `/api/v1/triggers/{trigger_id}/journal`로 trigger snapshot과 함께 조회할 수 있게 했습니다.
 *   **계획:**
     *   서버 시작 시 MT5 open positions와 `trading_logs/tracked_positions.json`을 대조하여 추적 상태를 자동 복구합니다.
     *   이미 열린 포지션이 있으면 동일 심볼/전략의 신규 진입을 가드레일에서 차단합니다.
@@ -212,6 +213,8 @@ MVP 단계가 완료된 이후, 진정한 "무인 펀드(Zero-Human Hedge Fund)"
     *   `Risk Reviewer`가 남긴 매매 일지(`trading_logs/`)를 ChromaDB 등 벡터 데이터베이스에 임베딩.
     *   `Chief Trader`가 과거의 유사한 차트 패턴이나 실패했던 매매 기록을 벡터 검색(RAG)하여 실수를 반복하지 않도록 기억력(Memory)을 부여합니다.
     *   복기 로그에 `symbol`, `timeframe`, `strategy`, `market_regime`, `result`, `pnl`, `exit_reason` 메타데이터를 구조화하여 검색 품질을 높입니다.
+    *   `ReviewLog`는 `process_quality`, `outcome_quality`, `trade_quality_label`, `rule_adherence`, `lesson_root_cause`, `lesson_evidence`, `next_trade_rule`, `confidence`를 함께 남기고, `lessons_learned`는 이를 합성한 재사용 가능한 규칙 텍스트로 저장하여 AI가 단순 요약이 아니라 행동 규칙을 학습할 수 있게 합니다.
+    *   운영 SQLite `trading_logs/trading_logs.sqlite`의 `trade_reviews`에도 동일한 품질 컬럼을 추가했고, 기존 복기 레코드는 가능한 범위에서 백필했습니다. 이제 익절/손절 결과와 별개로 룰 위반 매매를 `bad_trade`로 분류할 수 있습니다.
     *   RAG가 주입된 경우와 주입되지 않은 경우의 백테스트 결과를 비교하여 실제 개선 여부를 검증합니다.
 
 ### Phase 8: Sentiment Analyst 및 외부 컨텍스트 통합 (예정)

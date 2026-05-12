@@ -93,6 +93,10 @@ done
 6. Execution: Paper 또는 live 주문 전송
 7. Position Tracking: 로컬 파일과 `trading_logs/trading_logs.sqlite`에 열린 포지션 기록
 8. Post-Close Review: 청산 후 `trading_logs/review_*.md` 및 SQLite `trade_reviews` 기록
+   - 복기는 `pnl`만 보지 않고 `process_quality`, `outcome_quality`, `rule_adherence`, `trade_quality_label`을 함께 남깁니다.
+   - 익절했더라도 룰을 위반하면 `bad_trade`로 분류될 수 있습니다.
+9. Trade Journal: `trading_logs/trading_logs.sqlite`의 `trade_journals`와 `/api/v1/triggers/{trigger_id}/journal`로 trigger -> trade -> review 흐름 재구성
+   - `review_log_json`에 구조화된 복기 결과를 보존하여 이후 검색/RAG 입력으로 재사용합니다.
 
 실전/Paper 판단에 사용한 OHLCV를 장기 보존하려면 서버 실행 시 `PERSIST_MARKET_CANDLES=1`을 설정합니다. 저장 위치는 기본적으로 `backtests/data/market_data.sqlite`이며, `MARKET_DATA_DB_PATH`로 바꿀 수 있습니다. 이렇게 저장한 M5/M15/M30 candles는 백테스트와 같은 방식으로 차트 재생성, 진입/청산 marker overlay, 사후 복기에 재사용합니다.
 

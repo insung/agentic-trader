@@ -225,6 +225,7 @@ make migrate-legacy-data
 - 기존 `backtests/data/*.csv`가 `backtests/data/market_data.sqlite`의 `candles` 테이블로 들어갑니다.
 - 기존 `backtests/results/*.json`, `backtests/reports/*.md`가 백테스트 결과/리포트 테이블로 들어갑니다.
 - 기존 `trading_logs/review_*.md`가 `trading_logs/trading_logs.sqlite`의 `trade_reviews` 테이블로 들어갑니다.
+- `trade_journals`는 백테스트/운영 모두에서 trigger_id/trade_id/open-close-review 흐름을 잇는 보조 archive입니다.
 
 3. SQLite 데이터 존재 확인
 
@@ -244,7 +245,7 @@ import sqlite3
 
 checks = [
     ("backtests/data/market_data.sqlite", ["candles", "backtest_runs", "backtest_trades", "backtest_decisions", "backtest_reports"]),
-    ("trading_logs/trading_logs.sqlite", ["tracked_positions", "reviewed_trade_ids", "trade_reviews"]),
+    ("trading_logs/trading_logs.sqlite", ["tracked_positions", "reviewed_trade_ids", "trade_reviews", "trade_journals"]),
 ]
 
 for path, tables in checks:
@@ -390,6 +391,8 @@ backtests/logs/
 trading_logs/review_*.md
 trading_logs/trading_logs.sqlite
 ```
+
+`trade_journals`는 trigger -> trade -> review 흐름을 추적하는 보조 archive입니다.
 
 ## 자주 쓰는 조회 쿼리
 
